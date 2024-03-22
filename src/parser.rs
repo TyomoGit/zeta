@@ -128,6 +128,18 @@ impl Parser {
                     return;
                 };
                 match c_next {
+                    '[' => {
+                        self.back();
+                        self.consume_buffer();
+                        self.advance(); // '['
+
+                        while self.peek() != Some(')') && !self.is_at_end() {
+                            self.advance();
+                        }
+                        if !self.is_at_end() {
+                            self.advance();
+                        }
+                    }
                     ':' => {
                         const MESSAGE_TAG: &str = "message";
                         const DETAILS_TAG: &str = "details";

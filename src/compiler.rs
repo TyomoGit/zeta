@@ -79,8 +79,12 @@ impl QiitaCompiler {
             Element::Url(url) => format!("\n{}\n", url),
             Element::Macro(macro_info) => macro_info.qiita,
             Element::Image { alt, url } => {
-                let url = image_path_github(url.as_str());
-                format!("![{}]({})\n", alt, url)
+                let url = if url.starts_with("/images") {
+                    image_path_github(url.as_str())
+                } else {
+                    url
+                };
+                format!("![{}]({})", alt, url)
             }
             Element::InlineFootnote(name) => format!("[^{}]", name),
             Element::Message { msg_type, body } => {
@@ -208,7 +212,7 @@ impl ZennCompiler {
             Element::Url(url) => format!("\n{}\n", url),
             Element::Macro(macro_info) => macro_info.zenn,
             Element::Image { alt, url } => {
-                format!("![{}]({})\n", alt, url)
+                format!("![{}]({})", alt, url)
             }
             Element::InlineFootnote(name) => format!("^[{}]", name),
             Element::Message { msg_type, body } => {
