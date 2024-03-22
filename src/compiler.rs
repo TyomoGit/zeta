@@ -95,7 +95,7 @@ impl QiitaCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => macro_info.qiita,
+            Element::Macro(macro_info) => macro_info.qiita.unwrap_or_default(),
             Element::Image { alt, url } => {
                 let url = if url.starts_with("/images") {
                     image_path_github(url.as_str())
@@ -228,7 +228,7 @@ impl ZennCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => macro_info.zenn,
+            Element::Macro(macro_info) => macro_info.zenn.unwrap_or_default(),
             Element::Image { alt, url } => {
                 format!("![{}]({})", alt, url)
             }

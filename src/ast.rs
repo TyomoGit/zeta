@@ -15,8 +15,8 @@ pub struct ZetaHeader {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Macro {
-    pub zenn: String,
-    pub qiita: String,
+    pub zenn: Option<String>,
+    pub qiita: Option<String>,
 }
 
 #[derive(Debug, Clone)]

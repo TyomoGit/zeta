@@ -62,7 +62,6 @@ impl Parser {
     fn parse(mut self) -> Vec<Element> {
         while !self.is_at_end() {
             self.parse_element();
-            // dbg!(&self.result);
         }
 
         self.consume_buffer();
@@ -133,7 +132,7 @@ impl Parser {
                 }
 
                 let url = self.get_buffer().unwrap();
-                self.result.push(dbg!(Element::Url(url)));
+                self.result.push(Element::Url(url));
             }
             '\n' => {
                 let Some(c_next) = self.peek() else {
@@ -169,7 +168,7 @@ impl Parser {
                             while self.peek() != Some(':') {
                                 self.advance();
                             }
-                            let content = self.get_buffer().unwrap();
+                            let content = self.get_buffer().unwrap_or("".to_string());
                             let parser = Parser::new(content.chars().collect());
                             let content = parser.parse();
                             self.result.push(Element::Details {

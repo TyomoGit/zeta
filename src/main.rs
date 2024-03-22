@@ -1,10 +1,8 @@
-use ast::ZetaHeader;
 use clap::{command, Parser};
 use compiler::{QiitaCompiler, QiitaHeader, ZennCompiler};
 use print::zeta_error;
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
     fs::{self, DirBuilder},
     io::Write,
     process::Command,
@@ -68,7 +66,6 @@ fn main() {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Settings {
     repository: String,
-    macros: Option<HashMap<String, (String, String)>>,
 }
 
 fn init() {
@@ -82,7 +79,6 @@ fn init() {
 
     let settings = Settings {
         repository,
-        macros: None,
     };
 
     zeta_message("Creating Zeta.toml...");
@@ -159,8 +155,6 @@ fn build(target: &str) {
 
     let parser = parser::Parser::new(file.chars().collect());
     let file = parser.parse_file();
-
-    dbg!(&file);
 
     let existing_header =
         if let Ok(existing_file) = fs::read_to_string(format!("public/{}.md", target)) {
