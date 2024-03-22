@@ -1,6 +1,8 @@
+use std::{fs, process::{Command, Stdio}};
+
 use serde::{Deserialize, Serialize};
 
-use crate::ast::{Element, ZetaHeader, MarkdownFile, MessageType};
+use crate::{ast::{Element, MarkdownFile, MessageType, ZetaHeader}, print::zeta_error, Settings};
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,9 +77,11 @@ impl QiitaCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
+            Element::Macro(macro_info) => macro_info.qiita,
             Element::Image { alt, url } => {
-                todo!()
-            },
+                let url = image_path_github(url.as_str());
+                format!("![{}]({})\n", alt, url)
+            }
             Element::InlineFootnote(name) => format!("[^{}]", name),
             Element::Message { msg_type, body } => {
                 let msg_type = match msg_type {
@@ -86,18 +90,72 @@ impl QiitaCompiler {
                     MessageType::Alert => "alert",
                 };
 
-                let mut compiler = QiitaCompiler { existing_header: None };
+                let mut compiler = QiitaCompiler {
+                    existing_header: None,
+                };
                 let body = compiler.compile_elements(body);
 
                 format!(":::note {}\n{}:::", msg_type, body)
             }
             Element::Details { title, body } => {
-                let mut compiler = QiitaCompiler { existing_header: None };
+                let mut compiler = QiitaCompiler {
+                    existing_header: None,
+                };
                 let body = compiler.compile_elements(body);
-                format!("<details><summary>{}</summary>\n\n{}</details>", title, body)
+                format!(
+                    "<details><summary>{}</summary>\n\n{}</details>",
+                    title, body
+                )
             }
         }
     }
+}
+
+fn image_path_github(path: &str) -> String {
+    let Ok(settings) = fs::read_to_string("./Zeta.toml") else {
+        zeta_error("Failed to read Zeta.toml");
+        return path.to_string();
+    };
+    let Ok(settings): Result<Settings, _> = toml::from_str(settings.as_str()) else {
+        zeta_error("Failed to parse Zeta.toml");
+        return path.to_string();
+    };
+    let repository = settings.repository;
+
+    let mut remote = Command::new("git")
+        .args(["remote", "show", "origin"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    if !remote.wait().unwrap().success() {
+        zeta_error("Failed to get remote origin");
+        return path.to_string();
+    }
+
+    let grep = Command::new("grep")
+        .arg("HEAD branch")
+        .stdin(Stdio::from(remote.stdout.unwrap()))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let awk = Command::new("awk")
+        .arg("{print $NF}")
+        .stdin(Stdio::from(grep.stdout.unwrap()))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut main_branch = String::from_utf8(awk.wait_with_output().unwrap().stdout).unwrap();
+
+
+    if main_branch.is_empty() {
+        zeta_error("Failed to get main branch");
+        return path.to_string();
+    }
+
+    main_branch.pop(); // \n
+
+    format!("https://raw.githubusercontent.com/{}/{}{}", repository, main_branch, path)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -148,6 +206,7 @@ impl ZennCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
+            Element::Macro(macro_info) => macro_info.zenn,
             Element::Image { alt, url } => {
                 format!("![{}]({})\n", alt, url)
             }

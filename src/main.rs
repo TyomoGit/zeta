@@ -3,20 +3,26 @@ use clap::{command, Parser};
 use compiler::{QiitaCompiler, QiitaHeader, ZennCompiler};
 use print::zeta_error;
 use serde::Deserialize;
-use std::{collections::HashMap, fs::{self, DirBuilder}, io::Write, process::Command};
+use std::{
+    collections::HashMap,
+    fs::{self, DirBuilder},
+    io::Write,
+    process::Command,
+};
 
 use crate::print::zeta_message;
 
 mod ast;
+mod compiler;
 mod parser;
 mod print;
-mod compiler;
 
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]
 struct Args {
     mode: String,
     target: Option<String>,
+    new_name: Option<String>,
 }
 
 fn main() {
@@ -41,18 +47,28 @@ fn main() {
             build(target.as_str());
         }
 
+        "rename" => {
+            let Some(target) = args.target else {
+                zeta_error("Target is required");
+                return;
+            };
+            let Some(new_name) = args.new_name else {
+                zeta_error("New name is required");
+                return;
+            };
+            rename(target.as_str(), new_name.as_str());
+        }
+
         _ => {
-            zeta_error(
-                format!("Unknown mode: {}", mode).as_str()
-            );
+            zeta_error(format!("Unknown mode: {}", mode).as_str());
         }
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Settings {
     repository: String,
-    macros: Option<HashMap<String, (String, String)>>
+    macros: Option<HashMap<String, (String, String)>>,
 }
 
 fn init() {
@@ -64,7 +80,10 @@ fn init() {
     std::io::stdin().read_line(&mut repository).unwrap();
     repository = repository.trim().to_string();
 
-    let settings = Settings { repository, macros: None };
+    let settings = Settings {
+        repository,
+        macros: None,
+    };
 
     zeta_message("Creating Zeta.toml...");
     fs::File::create("Zeta.toml")
@@ -84,7 +103,7 @@ fn init() {
     println!("{}", String::from_utf8_lossy(&output.stdout));
 
     zeta_message("Installing Qiita CLI...");
-    let output =Command::new("npm")
+    let output = Command::new("npm")
         .args(["install", "@qiita/qiita-cli", "--save-dev"])
         .output()
         .unwrap();
@@ -107,6 +126,17 @@ fn init() {
     zeta_message("Creating zeta directory...");
     fs::DirBuilder::new().create("zeta").unwrap();
 
+    zeta_message("Initializing git...");
+    let output = Command::new("git")
+        .arg("init")
+        .output()
+        .unwrap();
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+
+    zeta_message("Creating .gitignore...");
+    let mut file = fs::File::create(".gitignore").unwrap();
+    file.write_all(include_str!("gitignore.txt").as_bytes()).unwrap();
+
     zeta_message("Done!");
 }
 
@@ -117,9 +147,8 @@ fn new(target: &str) {
     };
 
     let mut file = std::io::BufWriter::new(file);
-    file.write_all(
-        include_str!("zeta_templete.txt").as_bytes()
-    ).unwrap();
+    file.write_all(include_str!("zeta_templete.txt").as_bytes())
+        .unwrap();
 }
 
 fn build(target: &str) {
@@ -127,19 +156,22 @@ fn build(target: &str) {
         zeta_error("Target not found");
         return;
     };
-    
+
     let parser = parser::Parser::new(file.chars().collect());
     let file = parser.parse_file();
 
-    let existing_header = if let Ok(existing_file) = fs::read_to_string(format!("public/{}.md", target)) {
-        let existing_file = &existing_file[4..];
-        let end = existing_file.find("---").unwrap();
-        let existing_file = &existing_file[..end];
-        let de =serde_yaml::Deserializer::from_str(existing_file);
-        Some(QiitaHeader::deserialize(de).unwrap())
-    } else {
-        None
-    };
+    dbg!(&file);
+
+    let existing_header =
+        if let Ok(existing_file) = fs::read_to_string(format!("public/{}.md", target)) {
+            let existing_file = &existing_file[4..];
+            let end = existing_file.find("---").unwrap();
+            let existing_file = &existing_file[..end];
+            let de = serde_yaml::Deserializer::from_str(existing_file);
+            Some(QiitaHeader::deserialize(de).unwrap())
+        } else {
+            None
+        };
 
     let compiler = QiitaCompiler::new(existing_header);
     let qiita_md = compiler.compile(file.clone());
@@ -151,4 +183,16 @@ fn build(target: &str) {
     let compiler = ZennCompiler::new();
     let zenn_md = compiler.compile(file);
     fs::write(format!("articles/{}.md", target), zenn_md).unwrap();
+}
+
+fn rename(target: &str, new_name: &str) {
+    fs::rename(format!("zeta/{}.md", target), format!("zeta/{}.md", new_name)).unwrap();
+
+    if fs::File::open(format!("public/{}.md", target)).is_ok() {
+        fs::rename(format!("public/{}.md", target), format!("public/{}.md", new_name)).unwrap();
+    }
+
+    if fs::File::open(format!("articles/{}.md", target)).is_ok() {
+        fs::rename(format!("articles/{}.md", target), format!("articles/{}.md", new_name)).unwrap();
+    }
 }

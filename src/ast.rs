@@ -13,10 +13,17 @@ pub struct ZetaHeader {
     pub publish: bool,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Macro {
+    pub zenn: String,
+    pub qiita: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum Element {
     Text(String),
     Url(String),
+    Macro(Macro),
     Image {
         alt: String,
         url: String,

@@ -1,6 +1,9 @@
 use yaml_rust::YamlLoader;
 
-use crate::{ast::{Element, ZetaHeader, MarkdownFile, MessageType}, print::zeta_error};
+use crate::{
+    ast::{Element, Macro, MarkdownFile, MessageType, ZetaHeader},
+    print::zeta_error,
+};
 
 pub struct Parser {
     source: Vec<char>,
@@ -32,7 +35,7 @@ impl Parser {
             self.advance();
         }
         let header = self.get_buffer().unwrap();
-        
+
         (0..4).for_each(|_| {
             self.advance();
         });
@@ -43,7 +46,12 @@ impl Parser {
             title: yaml["title"].as_str().unwrap().to_string(),
             emoji: yaml["emoji"].as_str().unwrap().to_string(),
             type_: yaml["type"].as_str().unwrap().to_string(),
-            topics: yaml["topics"].as_vec().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect(),
+            topics: yaml["topics"]
+                .as_vec()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_string())
+                .collect(),
             publish: yaml["published"].as_bool().unwrap(),
         };
 
@@ -68,8 +76,57 @@ impl Parser {
         };
 
         match c {
-            '\n' => {
+            '<' => {
+                self.back();
+                if !self.matches_keyword("<macro>") {
+                    self.advance();
+                    return;
+                }
+                self.consume_buffer();
 
+                while self.peek() != Some('\n') {
+                    self.advance();
+                }
+                self.advance();
+                self.delete_buffer();
+                while self.peek() != Some('<') {
+                    self.advance();
+                }
+                let macro_yaml = self.get_buffer().unwrap();
+
+                while self.peek() != Some('>') {
+                    self.advance();
+                }
+                self.advance();
+                self.delete_buffer();
+                
+
+                let Ok(macro_yaml): Result<Macro, _> = serde_yaml::from_str(macro_yaml.as_str()) else {
+                    zeta_error("Invalid macro yaml");
+                    return;
+                };
+                
+
+                self.result.push(Element::Macro(macro_yaml));
+
+            }
+            'h' => {
+                self.back();
+                if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
+                    self.advance();
+                    return;
+                }
+
+                self.consume_buffer();
+
+                while self.peek().is_some() && !self.peek().unwrap().is_whitespace() {
+                    self.advance();
+                }
+
+                let url = self.get_buffer().unwrap();
+                self.result.push(dbg!(Element::Url(url)));
+            }
+            '\n' => {
                 let Some(c_next) = self.peek() else {
                     return;
                 };
@@ -83,11 +140,11 @@ impl Parser {
                             while matches!(self.peek(), Some(':')) {
                                 self.advance();
                             }
-    
+
                             (0..MESSAGE_TAG.len()).for_each(|_| {
                                 self.advance();
                             });
-    
+
                             self.advance_spaces();
 
                             self.delete_buffer();
@@ -106,7 +163,10 @@ impl Parser {
                             let content = self.get_buffer().unwrap();
                             let parser = Parser::new(content.chars().collect());
                             let content = parser.parse();
-                            self.result.push(Element::Details { title, body: content });
+                            self.result.push(Element::Details {
+                                title,
+                                body: content,
+                            });
 
                             self.advance();
                             self.advance();
@@ -130,7 +190,7 @@ impl Parser {
                         });
 
                         self.advance_spaces();
-                        
+
                         let message_type = if self.matches_keyword("info") {
                             MessageType::Info
                         } else if self.matches_keyword("warn") {
@@ -149,18 +209,20 @@ impl Parser {
                         if let Some('\n') = self.peek() {
                             self.advance();
                         }
-                        
+
                         self.delete_buffer();
 
                         while self.peek() != Some(':') {
                             self.advance();
                         }
 
-
                         let content = self.get_buffer().unwrap();
                         let parser = Parser::new(content.chars().collect());
                         let content = parser.parse();
-                        self.result.push(Element::Message { msg_type: message_type, body: content });
+                        self.result.push(Element::Message {
+                            msg_type: message_type,
+                            body: content,
+                        });
 
                         self.advance();
                         self.advance();
@@ -182,7 +244,7 @@ impl Parser {
                             self.advance(); // '`'
 
                             while self.peek() != Some('`') {
-                                dbg!(self.advance());
+                                self.advance();
                             }
 
                             (0.."```".len()).for_each(|_| {
@@ -206,6 +268,7 @@ impl Parser {
 
                         let alt = self.get_buffer().unwrap();
                         self.advance(); // ']'
+                        self.advance(); // '('
                         self.delete_buffer();
 
                         self.advance(); // '('
@@ -225,11 +288,14 @@ impl Parser {
             }
 
             '^' => {
+                self.back();
                 if !self.matches_keyword("^[") {
+                    self.advance();
                     return;
                 }
                 self.consume_buffer();
 
+                self.advance(); // '^'
                 self.advance(); // '['
                 self.delete_buffer();
 
@@ -253,6 +319,16 @@ impl Parser {
         self.source.get(self.position - 1).copied()
     }
 
+    fn back(&mut self) -> bool {
+        if self.position == 0 {
+            return false;
+        }
+
+        self.position -= 1;
+
+        true
+    }
+
     fn peek(&mut self) -> Option<char> {
         self.source.get(self.position).copied()
     }
@@ -262,11 +338,14 @@ impl Parser {
     }
 
     fn matches_keyword(&mut self, keyword: &str) -> bool {
-        let Some(target) = self.source.get(self.position..self.position + keyword.len()) else {
+        let Some(target) = self
+            .source
+            .get(self.position..self.position + keyword.len())
+        else {
             return false;
         };
 
-        target.into_iter().cloned().eq(keyword.chars())
+        target.iter().cloned().eq(keyword.chars())
     }
 
     fn is_at_end(&mut self) -> bool {
