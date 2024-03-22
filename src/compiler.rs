@@ -34,11 +34,18 @@ impl QiitaCompiler {
         let mut result = b"---\n".to_vec();
 
         let qiita_header = if let Some(existing_header) = &self.existing_header {
+            let updated_at = existing_header.updated_at.clone();
+            // let updated_at = format!("\'{}\'", updated_at);
+            // let mut info = updated_at.split(": ")
+            //     .collect::<Vec<&str>>();
+            // info.insert(1, "\"");
+            // info.push("\"");
+            // let updated_at = info.join(": ");
             QiitaHeader {
                 title: header.title,
                 tags: header.topics,
                 private: existing_header.private,
-                updated_at: existing_header.updated_at.clone(),
+                updated_at,
                 id: existing_header.id.clone(),
                 organization_url_name: existing_header.organization_url_name.clone(),
                 slide: existing_header.slide,
@@ -61,7 +68,17 @@ impl QiitaCompiler {
 
         result.extend(b"---\n");
 
-        String::from_utf8(result).unwrap()
+        let result = String::from_utf8(result).unwrap();
+        let mut lines: Vec<String> = result.split('\n').map(|s| s.to_string()).collect();
+        let updated_at = lines.get_mut(4).unwrap();
+
+        if updated_at.ends_with('\"') || updated_at.ends_with('\'') {
+            result
+        } else {
+            *updated_at = format!("updated_at: \'{}\'", &updated_at[12..]);
+
+            lines.join("\n")
+        }
     }
 
     fn compile_elements(&mut self, elements: Vec<Element>) -> String {
