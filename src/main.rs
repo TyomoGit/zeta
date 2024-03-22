@@ -57,6 +57,14 @@ fn main() {
             rename(target.as_str(), new_name.as_str());
         }
 
+        "remove" => {
+            let Some(target) = args.target else {
+                zeta_error("Target is required");
+                return;
+            };
+            remove(target.as_str());
+        }
+
         _ => {
             zeta_error(format!("Unknown mode: {}", mode).as_str());
         }
@@ -189,4 +197,10 @@ fn rename(target: &str, new_name: &str) {
     if fs::File::open(format!("articles/{}.md", target)).is_ok() {
         fs::rename(format!("articles/{}.md", target), format!("articles/{}.md", new_name)).unwrap();
     }
+}
+
+fn remove(target: &str) {
+    let _ = fs::remove_file(format!("zeta/{}.md", target));
+    let _ = fs::remove_file(format!("articles/{}.md", target));
+    let _ = fs::remove_file(format!("public/{}.md", target));
 }
