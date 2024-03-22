@@ -94,10 +94,7 @@ impl Parser {
                 }
                 let macro_yaml = self.get_buffer().unwrap();
 
-                while self.peek() != Some('>') {
-                    self.advance();
-                }
-                self.advance();
+                self.consume_string("</macro>");
                 self.delete_buffer();
                 
 
@@ -376,5 +373,19 @@ impl Parser {
         while self.peek() == Some(' ') {
             self.advance();
         }
+    }
+
+    fn consume_string(&mut self, string: &str) -> bool {
+        let length = string.len();
+        let Some(buffer) = self.source.get(self.position..self.position + length) else {
+            return false;
+        };
+
+        if buffer.iter().copied().eq(string.chars()) {
+            self.position += length;
+            return true;
+        }
+
+        false
     }
 }
