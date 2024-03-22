@@ -70,7 +70,8 @@ impl QiitaCompiler {
 
         let result = String::from_utf8(result).unwrap();
         let mut lines: Vec<String> = result.split('\n').map(|s| s.to_string()).collect();
-        let updated_at = lines.get_mut(4).unwrap();
+        let updated_at = lines.iter().position(|s| s.starts_with("updated_at:")).unwrap();
+        let updated_at = lines.get_mut(updated_at).unwrap();
 
         if updated_at.ends_with('\"') || updated_at.ends_with('\'') {
             result
