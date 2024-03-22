@@ -263,7 +263,7 @@ impl Parser {
                             self.advance();
                         }
 
-                        let alt = self.get_buffer().unwrap();
+                        let alt = self.get_buffer().unwrap_or("".to_string());
                         self.advance(); // ']'
                         self.advance(); // '('
                         self.delete_buffer();
