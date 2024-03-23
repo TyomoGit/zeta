@@ -49,7 +49,7 @@ impl QiitaCompiler {
                 id: existing_header.id.clone(),
                 organization_url_name: existing_header.organization_url_name.clone(),
                 slide: existing_header.slide,
-                ignorePublish: !header.publish,
+                ignorePublish: !header.published,
             }
         } else {
             QiitaHeader {
@@ -60,7 +60,7 @@ impl QiitaCompiler {
                 id: None,
                 organization_url_name: None,
                 slide: false,
-                ignorePublish: !header.publish,
+                ignorePublish: !header.published,
             }
         };
         let mut ser = serde_yaml::Serializer::new(&mut result);
@@ -207,7 +207,7 @@ impl ZennCompiler {
             emoji: header.emoji,
             r#type: "tech".to_string(),
             topics: header.topics,
-            published: header.publish,
+            published: header.published,
         };
         let mut ser = serde_yaml::Serializer::new(&mut result);
         zenn_header.serialize(&mut ser).unwrap();

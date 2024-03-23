@@ -4,13 +4,13 @@ pub struct MarkdownFile {
     pub elements: Vec<Element>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct ZetaHeader {
     pub title: String,
     pub emoji: String,
-    pub type_: String,
+    pub r#type: String,
     pub topics: Vec<String>,
-    pub publish: bool,
+    pub published: bool,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

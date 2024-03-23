@@ -1,5 +1,3 @@
-use yaml_rust::YamlLoader;
-
 use crate::{
     ast::{Element, Macro, MarkdownFile, MessageType, ZetaHeader},
     print::zeta_error,
@@ -25,10 +23,7 @@ impl Parser {
     }
 
     pub fn parse_file(mut self) -> MarkdownFile {
-        // ---\n
-        (0..4).for_each(|_| {
-            self.advance();
-        });
+        self.consume_string("---\n");
         self.delete_buffer();
 
         while self.peek() != Some('-') {
@@ -36,23 +31,12 @@ impl Parser {
         }
         let header = self.get_buffer().unwrap();
 
-        (0..4).for_each(|_| {
-            self.advance();
-        });
+        self.consume_string("---\n");
         self.delete_buffer();
 
-        let yaml = &YamlLoader::load_from_str(header.as_str()).unwrap()[0];
-        let header = ZetaHeader {
-            title: yaml["title"].as_str().unwrap().to_string(),
-            emoji: yaml["emoji"].as_str().unwrap().to_string(),
-            type_: yaml["type"].as_str().unwrap().to_string(),
-            topics: yaml["topics"]
-                .as_vec()
-                .unwrap()
-                .iter()
-                .map(|x| x.as_str().unwrap().to_string())
-                .collect(),
-            publish: yaml["published"].as_bool().unwrap(),
+        let Ok(header) = serde_yaml::from_str(header.as_str()) else {
+            zeta_error("Invalid header yaml");
+            return MarkdownFile { header: ZetaHeader::default(), elements: vec![] };
         };
 
         let elements = self.parse();
@@ -70,25 +54,25 @@ impl Parser {
     }
 
     fn parse_element(&mut self) {
-        let Some(c) = self.advance() else {
+        dbg!(self.peek());
+        let Some(c) = self.peek() else {
             return;
         };
 
         match c {
             '[' => {
-                self.back();
                 self.consume_buffer();
-                self.advance(); // '['
+                self.consume_string("[");
 
                 while self.peek() != Some(')') && !self.is_at_end() {
                     self.advance();
                 }
+
                 if !self.is_at_end() {
                     self.advance();
                 }
             }
             '<' => {
-                self.back();
                 if !self.matches_keyword("<macro>") {
                     self.advance();
                     return;
@@ -98,7 +82,7 @@ impl Parser {
                 while self.peek() != Some('\n') {
                     self.advance();
                 }
-                self.advance();
+                self.consume_string("\n");
                 self.delete_buffer();
                 while self.peek() != Some('<') {
                     self.advance();
@@ -119,7 +103,6 @@ impl Parser {
 
             }
             'h' => {
-                self.back();
                 if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
                     self.advance();
                     return;
@@ -135,6 +118,7 @@ impl Parser {
                 self.result.push(Element::Url(url));
             }
             '\n' => {
+                self.advance();
                 let Some(c_next) = self.peek() else {
                     return;
                 };
@@ -149,9 +133,7 @@ impl Parser {
                                 self.advance();
                             }
 
-                            (0..MESSAGE_TAG.len()).for_each(|_| {
-                                self.advance();
-                            });
+                            self.consume_string(DETAILS_TAG);
 
                             self.advance_spaces();
 
@@ -176,9 +158,10 @@ impl Parser {
                                 body: content,
                             });
 
-                            self.advance();
-                            self.advance();
-                            self.advance();
+                            while matches!(self.peek(), Some(':')) {
+                                self.advance();
+                            }
+
                             self.delete_buffer();
 
                             return;
@@ -214,9 +197,7 @@ impl Parser {
                             self.advance();
                         }
 
-                        if let Some('\n') = self.peek() {
-                            self.advance();
-                        }
+                        self.consume_string("\n");
 
                         self.delete_buffer();
 
@@ -232,9 +213,10 @@ impl Parser {
                             body: content,
                         });
 
-                        self.advance();
-                        self.advance();
-                        self.advance();
+                        while matches!(self.peek(), Some(':')) {
+                            self.advance();
+                        }
+
                         self.delete_buffer();
                     }
 
@@ -244,20 +226,16 @@ impl Parser {
                             while self.peek() != Some('`') {
                                 self.advance();
                             }
-                            self.advance(); // '`'
+                            self.consume_string("`");
                         } else if self.matches_keyword("```") {
                             // block
-                            self.advance(); // '`'
-                            self.advance(); // '`'
-                            self.advance(); // '`'
+                            self.consume_string("```");
 
-                            while self.peek() != Some('`') {
+                            while self.peek() != Some('`') && !self.is_at_end() {
                                 self.advance();
                             }
 
-                            (0.."```".len()).for_each(|_| {
-                                self.advance();
-                            });
+                            self.consume_string("```");
                         }
                     }
 
@@ -266,8 +244,7 @@ impl Parser {
                             return;
                         }
                         self.consume_buffer();
-                        self.advance(); // '!'
-                        self.advance(); // '['
+                        self.consume_string("![");
                         self.delete_buffer();
 
                         while self.peek() != Some(']') {
@@ -275,18 +252,15 @@ impl Parser {
                         }
 
                         let alt = self.get_buffer().unwrap_or("".to_string());
-                        self.advance(); // ']'
-                        self.advance(); // '('
+                        self.consume_string("](");
                         self.delete_buffer();
-
-                        self.advance(); // '('
 
                         while self.peek() != Some(')') {
                             self.advance();
                         }
 
                         let url = self.get_buffer().unwrap();
-                        self.advance(); // ')'
+                        self.consume_string(")");
                         self.delete_buffer();
 
                         self.result.push(Element::Image { alt, url });
@@ -296,15 +270,13 @@ impl Parser {
             }
 
             '^' => {
-                self.back();
                 if !self.matches_keyword("^[") {
                     self.advance();
                     return;
                 }
                 self.consume_buffer();
 
-                self.advance(); // '^'
-                self.advance(); // '['
+                self.consume_string("^[");
                 self.delete_buffer();
 
                 while self.peek() != Some(']') {
@@ -314,11 +286,13 @@ impl Parser {
                 let inline_footnote = self.get_buffer().unwrap();
                 self.result.push(Element::InlineFootnote(inline_footnote));
 
-                self.advance(); // ']'
+                self.consume_string("]");
                 self.delete_buffer();
             }
 
-            _ => (),
+            _ => {
+                self.advance();
+            }
         }
     }
 
@@ -387,13 +361,8 @@ impl Parser {
     }
 
     fn consume_string(&mut self, string: &str) -> bool {
-        let length = string.len();
-        let Some(buffer) = self.source.get(self.position..self.position + length) else {
-            return false;
-        };
-
-        if buffer.iter().copied().eq(string.chars()) {
-            self.position += length;
+        if self.matches_keyword(string) {
+            self.position += string.len();
             return true;
         }
 
