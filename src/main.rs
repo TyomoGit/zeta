@@ -130,6 +130,8 @@ fn init() {
 }
 
 fn new(target: &str, only: &Option<Platform>) {
+    let _ = fs::DirBuilder::new().recursive(true).create(format!("images/{}", target));
+
     let Ok(file) = fs::File::create(format!("zeta/{}.md", target)) else {
         zeta_error("Target already exists");
         return;
