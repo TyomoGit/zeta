@@ -1,7 +1,8 @@
-use clap::{command, Parser};
+use ast::{MarkdownFile, Platform, ZetaHeader};
+use clap::{command, Parser, Subcommand};
 use compiler::{QiitaCompiler, QiitaHeader, ZennCompiler};
-use print::zeta_error;
-use serde::Deserialize;
+use print::{zeta_error, zeta_error_position};
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, DirBuilder},
     io::Write,
@@ -17,57 +18,45 @@ mod print;
 
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]
-struct Args {
-    mode: String,
-    target: Option<String>,
-    new_name: Option<String>,
+struct Cli {
+    /// Subcommand
+    #[command(subcommand)]
+    command: Commands,
 }
 
+#[derive(Debug, Clone, Subcommand)]
+enum Commands {
+    /// Initialize Zeta
+    Init,
+    /// Create new article
+    New {
+        target: String,
+        #[arg(long)]
+        only: Option<Platform>
+    },
+    /// Build article
+    Build { target: String },
+    /// Rename article
+    Rename { target: String, new_name: String },
+    /// Remove article
+    Remove { target: String },
+}
+
+// #[derive(Debug, Clone, Args)]
+// struct NewCommand {
+//     target: String,
+//     #[arg(long)]
+//     only: Option<Platform>,
+// }
+
 fn main() {
-    let args = Args::parse();
-    let mode = args.mode.as_str();
-    match mode {
-        "init" => init(),
-
-        "new" => {
-            let Some(target) = args.target else {
-                zeta_error("Target is required");
-                return;
-            };
-            new(target.as_str());
-        }
-
-        "build" => {
-            let Some(target) = args.target else {
-                zeta_error("Target is required");
-                return;
-            };
-            build(target.as_str());
-        }
-
-        "rename" => {
-            let Some(target) = args.target else {
-                zeta_error("Target is required");
-                return;
-            };
-            let Some(new_name) = args.new_name else {
-                zeta_error("New name is required");
-                return;
-            };
-            rename(target.as_str(), new_name.as_str());
-        }
-
-        "remove" => {
-            let Some(target) = args.target else {
-                zeta_error("Target is required");
-                return;
-            };
-            remove(target.as_str());
-        }
-
-        _ => {
-            zeta_error(format!("Unknown mode: {}", mode).as_str());
-        }
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Init => init(),
+        Commands::New { target, only } => new(&target, &only),
+        Commands::Build { target } => build(&target),
+        Commands::Rename { target, new_name } => rename(&target, &new_name),
+        Commands::Remove { target } => remove(&target),
     }
 }
 
@@ -85,9 +74,7 @@ fn init() {
     std::io::stdin().read_line(&mut repository).unwrap();
     repository = repository.trim().to_string();
 
-    let settings = Settings {
-        repository,
-    };
+    let settings = Settings { repository };
 
     zeta_message("Creating Zeta.toml...");
     fs::File::create("Zeta.toml")
@@ -131,28 +118,36 @@ fn init() {
     fs::DirBuilder::new().create("zeta").unwrap();
 
     zeta_message("Initializing git...");
-    let output = Command::new("git")
-        .arg("init")
-        .output()
-        .unwrap();
+    let output = Command::new("git").arg("init").output().unwrap();
     println!("{}", String::from_utf8_lossy(&output.stdout));
 
     zeta_message("Creating .gitignore...");
     let mut file = fs::File::create(".gitignore").unwrap();
-    file.write_all(include_str!("gitignore.txt").as_bytes()).unwrap();
+    file.write_all(include_str!("gitignore.txt").as_bytes())
+        .unwrap();
 
     zeta_message("Done!");
 }
 
-fn new(target: &str) {
+fn new(target: &str, only: &Option<Platform>) {
     let Ok(file) = fs::File::create(format!("zeta/{}.md", target)) else {
         zeta_error("Target already exists");
         return;
     };
 
     let mut file = std::io::BufWriter::new(file);
-    file.write_all(include_str!("zeta_templete.txt").as_bytes())
-        .unwrap();
+    let frontmatter = ZetaHeader {
+        title: "".to_string(),
+        emoji: "😀".to_string(),
+        r#type: "tech".to_string(),
+        topics: vec![],
+        published: false,
+        only: only.clone(),
+    };
+    file.write_all(b"---\n").unwrap();
+    let mut serializer = serde_yaml::Serializer::new(&mut file);
+    frontmatter.serialize(&mut serializer).unwrap();
+    file.write_all(b"---\n").unwrap();
 }
 
 fn build(target: &str) {
@@ -162,8 +157,32 @@ fn build(target: &str) {
     };
 
     let parser = parser::Parser::new(file.chars().collect());
-    let file = parser.parse_file();
+    let result = parser.parse_file();
+    let Ok(file) = result else {
+        result.unwrap_err().iter().for_each(|error| {
+            zeta_error_position(&error.error_type.to_string(), error.row, error.col);
+        });
+        return;
+    };
 
+    if let Some(platform) = &file.frontmatter.only {
+        match platform {
+            ast::Platform::Zenn => compile_zenn(file, target),
+            ast::Platform::Qiita => compile_qiita(file, target),
+        }
+    } else {
+        compile_zenn(file.clone(), target);
+        compile_qiita(file, target);
+    }
+}
+
+fn compile_zenn(file: MarkdownFile, target: &str) {
+    let compiler = ZennCompiler::new();
+    let zenn_md = compiler.compile(file);
+    fs::write(format!("articles/{}.md", target), zenn_md).unwrap();
+}
+
+fn compile_qiita(file: MarkdownFile, target: &str) {
     let existing_header =
         if let Ok(existing_file) = fs::read_to_string(format!("public/{}.md", target)) {
             let existing_file = &existing_file[4..];
@@ -180,22 +199,29 @@ fn build(target: &str) {
 
     DirBuilder::new().recursive(true).create("public").unwrap();
     fs::write(format!("public/{}.md", target), qiita_md).unwrap();
-
-    // /////////////////////
-    let compiler = ZennCompiler::new();
-    let zenn_md = compiler.compile(file);
-    fs::write(format!("articles/{}.md", target), zenn_md).unwrap();
 }
 
 fn rename(target: &str, new_name: &str) {
-    fs::rename(format!("zeta/{}.md", target), format!("zeta/{}.md", new_name)).unwrap();
+    fs::rename(
+        format!("zeta/{}.md", target),
+        format!("zeta/{}.md", new_name),
+    )
+    .unwrap();
 
     if fs::File::open(format!("public/{}.md", target)).is_ok() {
-        fs::rename(format!("public/{}.md", target), format!("public/{}.md", new_name)).unwrap();
+        fs::rename(
+            format!("public/{}.md", target),
+            format!("public/{}.md", new_name),
+        )
+        .unwrap();
     }
 
     if fs::File::open(format!("articles/{}.md", target)).is_ok() {
-        fs::rename(format!("articles/{}.md", target), format!("articles/{}.md", new_name)).unwrap();
+        fs::rename(
+            format!("articles/{}.md", target),
+            format!("articles/{}.md", new_name),
+        )
+        .unwrap();
     }
 }
 

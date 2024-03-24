@@ -1,8 +1,15 @@
-use std::{fs, process::{Command, Stdio}};
+use std::{
+    fs,
+    process::{Command, Stdio},
+};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ast::{Element, MarkdownFile, MessageType, ZetaHeader}, print::zeta_error, Settings};
+use crate::{
+    ast::{Element, MarkdownFile, MessageType, ZetaHeader},
+    print::zeta_error,
+    Settings,
+};
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,7 +34,7 @@ impl QiitaCompiler {
     }
 
     pub fn compile(mut self, file: MarkdownFile) -> String {
-        self.compile_header(file.header) + &self.compile_elements(file.elements)
+        self.compile_header(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
     fn compile_header(&mut self, header: ZetaHeader) -> String {
@@ -70,7 +77,10 @@ impl QiitaCompiler {
 
         let result = String::from_utf8(result).unwrap();
         let mut lines: Vec<String> = result.split('\n').map(|s| s.to_string()).collect();
-        let updated_at = lines.iter().position(|s| s.starts_with("updated_at:")).unwrap();
+        let updated_at = lines
+            .iter()
+            .position(|s| s.starts_with("updated_at:"))
+            .unwrap();
         let updated_at = lines.get_mut(updated_at).unwrap();
 
         if updated_at.ends_with('\"') || updated_at.ends_with('\'') {
@@ -125,7 +135,7 @@ impl QiitaCompiler {
                 };
                 let body = compiler.compile_elements(body);
                 format!(
-                    "<details><summary>{}</summary>\n\n{}</details>",
+                    "<details><summary>{}</summary>\n\n{}</details>\n",
                     title, body
                 )
             }
@@ -169,7 +179,6 @@ fn image_path_github(path: &str) -> String {
         .unwrap();
     let mut main_branch = String::from_utf8(awk.wait_with_output().unwrap().stdout).unwrap();
 
-
     if main_branch.is_empty() {
         zeta_error("Failed to get main branch");
         return path.to_string();
@@ -177,7 +186,10 @@ fn image_path_github(path: &str) -> String {
 
     main_branch.pop(); // \n
 
-    format!("https://raw.githubusercontent.com/{}/{}{}", repository, main_branch, path)
+    format!(
+        "https://raw.githubusercontent.com/{}/{}{}",
+        repository, main_branch, path
+    )
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -197,7 +209,7 @@ impl ZennCompiler {
     }
 
     pub fn compile(mut self, file: MarkdownFile) -> String {
-        self.compile_header(file.header) + &self.compile_elements(file.elements)
+        self.compile_header(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
     fn compile_header(&mut self, header: ZetaHeader) -> String {
