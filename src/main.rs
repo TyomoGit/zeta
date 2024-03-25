@@ -1,6 +1,6 @@
-use ast::{MarkdownFile, Platform, ZetaHeader};
+use ast::{MarkdownFile, Platform, ZetaFrontmatter};
 use clap::{command, Parser, Subcommand};
-use compiler::{QiitaCompiler, QiitaHeader, ZennCompiler};
+use compiler::{QiitaCompiler, QiitaFrontmatter, ZennCompiler};
 use print::{zeta_error, zeta_error_position};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -21,18 +21,18 @@ mod print;
 struct Cli {
     /// Subcommand
     #[command(subcommand)]
-    command: Commands,
+    command: ZetaCommand,
 }
 
 #[derive(Debug, Clone, Subcommand)]
-enum Commands {
+enum ZetaCommand {
     /// Initialize Zeta
     Init,
     /// Create new article
     New {
         target: String,
         #[arg(long)]
-        only: Option<Platform>
+        only: Option<Platform>,
     },
     /// Build article
     Build { target: String },
@@ -42,21 +42,14 @@ enum Commands {
     Remove { target: String },
 }
 
-// #[derive(Debug, Clone, Args)]
-// struct NewCommand {
-//     target: String,
-//     #[arg(long)]
-//     only: Option<Platform>,
-// }
-
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init => init(),
-        Commands::New { target, only } => new(&target, &only),
-        Commands::Build { target } => build(&target),
-        Commands::Rename { target, new_name } => rename(&target, &new_name),
-        Commands::Remove { target } => remove(&target),
+        ZetaCommand::Init => init(),
+        ZetaCommand::New { target, only } => new(&target, &only),
+        ZetaCommand::Build { target } => build(&target),
+        ZetaCommand::Rename { target, new_name } => rename(&target, &new_name),
+        ZetaCommand::Remove { target } => remove(&target),
     }
 }
 
@@ -130,7 +123,9 @@ fn init() {
 }
 
 fn new(target: &str, only: &Option<Platform>) {
-    let _ = fs::DirBuilder::new().recursive(true).create(format!("images/{}", target));
+    let _ = fs::DirBuilder::new()
+        .recursive(true)
+        .create(format!("images/{}", target));
 
     let Ok(file) = fs::File::create(format!("zeta/{}.md", target)) else {
         zeta_error("Target already exists");
@@ -138,7 +133,7 @@ fn new(target: &str, only: &Option<Platform>) {
     };
 
     let mut file = std::io::BufWriter::new(file);
-    let frontmatter = ZetaHeader {
+    let frontmatter = ZetaFrontmatter {
         title: "".to_string(),
         emoji: "😀".to_string(),
         r#type: "tech".to_string(),
@@ -191,7 +186,7 @@ fn compile_qiita(file: MarkdownFile, target: &str) {
             let end = existing_file.find("---").unwrap();
             let existing_file = &existing_file[..end];
             let de = serde_yaml::Deserializer::from_str(existing_file);
-            Some(QiitaHeader::deserialize(de).unwrap())
+            Some(QiitaFrontmatter::deserialize(de).unwrap())
         } else {
             None
         };

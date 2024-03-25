@@ -162,6 +162,10 @@ impl Parser {
                 self.inline_footnote()?;
             }
 
+            '`' => {
+                self.code_block()?;
+            }
+
             '\n' => {
                 // block element
 
@@ -183,6 +187,8 @@ impl Parser {
             return Ok(());
         };
 
+        self.advance_spaces();
+
         match c_next {
             'h' => {
                 if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
@@ -198,10 +204,6 @@ impl Parser {
                 } else if self.matches_keyword(format!(":::{MESSAGE_TAG}").as_str()) {
                     self.message()?;
                 }
-            }
-
-            '`' => {
-                self.code_block()?;
             }
 
             '!' => {
@@ -276,7 +278,13 @@ impl Parser {
     fn url(&mut self) {
         self.collect_text();
 
-        while self.peek().is_some() && !self.peek().unwrap().is_whitespace() {
+        while let Some(c) = self.peek() {
+            if c.is_whitespace() {
+                break;
+            }
+            if self.is_at_end() {
+                break;
+            }
             self.advance();
         }
 
@@ -381,17 +389,11 @@ impl Parser {
     }
 
     fn code_block(&mut self) -> Result<()> {
-        if self.peek_next() != Some('`') {
-            // inline
-            self.expect_string("`");
-            self.extract_until("`")?;
-            self.expect_string("`");
-        } else if self.matches_keyword("```") {
-            // block
-            self.expect_string("```");
-            self.extract_until("```")?;
-            self.expect_string("```");
-        }
+        self.extract_while('`');
+
+        self.extract_until("`")?;
+
+        self.extract_while('`');
 
         Ok(())
     }
@@ -433,10 +435,6 @@ impl Parser {
 
     fn peek(&mut self) -> Option<char> {
         self.source.get(self.position).copied()
-    }
-
-    fn peek_next(&mut self) -> Option<char> {
-        self.source.get(self.position + 1).copied()
     }
 
     fn matches_keyword(&mut self, keyword: &str) -> bool {
@@ -508,6 +506,12 @@ impl Parser {
         Ok(())
     }
 
+    fn extract_while(&mut self, char: char) {
+        while self.peek() == Some(char) && !self.is_at_end() {
+            self.advance();
+        }
+    }
+
     fn extract_until_unchecked(&mut self, until: char) {
         while self.peek() != Some(until) && !self.is_at_end() {
             self.advance();
@@ -515,8 +519,6 @@ impl Parser {
     }
 
     fn advance_spaces(&mut self) {
-        while self.peek() == Some(' ') {
-            self.advance();
-        }
+        self.extract_while(' ');
     }
 }

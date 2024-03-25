@@ -1,11 +1,11 @@
 #[derive(Debug, Clone)]
 pub struct MarkdownFile {
-    pub frontmatter: ZetaHeader,
+    pub frontmatter: ZetaFrontmatter,
     pub elements: Vec<Element>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct ZetaHeader {
+pub struct ZetaFrontmatter {
     pub title: String,
     pub emoji: String,
     pub r#type: String,

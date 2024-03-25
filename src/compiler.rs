@@ -6,14 +6,14 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ast::{Element, MarkdownFile, MessageType, ZetaHeader},
+    ast::{Element, MarkdownFile, MessageType, ZetaFrontmatter},
     print::zeta_error,
     Settings,
 };
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct QiitaHeader {
+pub struct QiitaFrontmatter {
     title: String,
     tags: Vec<String>,
     private: bool,
@@ -25,53 +25,48 @@ pub struct QiitaHeader {
 }
 
 pub struct QiitaCompiler {
-    existing_header: Option<QiitaHeader>,
+    existing_fm: Option<QiitaFrontmatter>,
 }
 
 impl QiitaCompiler {
-    pub fn new(existing_header: Option<QiitaHeader>) -> Self {
-        Self { existing_header }
+    pub fn new(existing_header: Option<QiitaFrontmatter>) -> Self {
+        Self {
+            existing_fm: existing_header,
+        }
     }
 
     pub fn compile(mut self, file: MarkdownFile) -> String {
-        self.compile_header(file.frontmatter) + &self.compile_elements(file.elements)
+        self.compile_frontmatter(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
-    fn compile_header(&mut self, header: ZetaHeader) -> String {
+    fn compile_frontmatter(&mut self, frontmatter: ZetaFrontmatter) -> String {
         let mut result = b"---\n".to_vec();
 
-        let qiita_header = if let Some(existing_header) = &self.existing_header {
-            let updated_at = existing_header.updated_at.clone();
-            // let updated_at = format!("\'{}\'", updated_at);
-            // let mut info = updated_at.split(": ")
-            //     .collect::<Vec<&str>>();
-            // info.insert(1, "\"");
-            // info.push("\"");
-            // let updated_at = info.join(": ");
-            QiitaHeader {
-                title: header.title,
-                tags: header.topics,
-                private: existing_header.private,
-                updated_at,
-                id: existing_header.id.clone(),
-                organization_url_name: existing_header.organization_url_name.clone(),
-                slide: existing_header.slide,
-                ignorePublish: !header.published,
+        let frontmatter = if let Some(existing_fm) = &self.existing_fm {
+            QiitaFrontmatter {
+                title: frontmatter.title,
+                tags: frontmatter.topics,
+                private: existing_fm.private,
+                updated_at: existing_fm.updated_at.clone(),
+                id: existing_fm.id.clone(),
+                organization_url_name: existing_fm.organization_url_name.clone(),
+                slide: existing_fm.slide,
+                ignorePublish: !frontmatter.published,
             }
         } else {
-            QiitaHeader {
-                title: header.title,
-                tags: header.topics,
+            QiitaFrontmatter {
+                title: frontmatter.title,
+                tags: frontmatter.topics,
                 private: false,
                 updated_at: "".to_string(),
                 id: None,
                 organization_url_name: None,
                 slide: false,
-                ignorePublish: !header.published,
+                ignorePublish: !frontmatter.published,
             }
         };
         let mut ser = serde_yaml::Serializer::new(&mut result);
-        qiita_header.serialize(&mut ser).unwrap();
+        frontmatter.serialize(&mut ser).unwrap();
 
         result.extend(b"---\n");
 
@@ -93,12 +88,10 @@ impl QiitaCompiler {
     }
 
     fn compile_elements(&mut self, elements: Vec<Element>) -> String {
-        let mut result = String::new();
-        for element in elements {
-            result += &self.compile_element(element);
-        }
-
-        result
+        elements
+            .into_iter()
+            .map(|element| self.compile_element(element))
+            .collect()
     }
 
     fn compile_element(&mut self, element: Element) -> String {
@@ -122,17 +115,13 @@ impl QiitaCompiler {
                     MessageType::Alert => "alert",
                 };
 
-                let mut compiler = QiitaCompiler {
-                    existing_header: None,
-                };
+                let mut compiler = QiitaCompiler { existing_fm: None };
                 let body = compiler.compile_elements(body);
 
                 format!(":::note {}\n{}:::", msg_type, body)
             }
             Element::Details { title, body } => {
-                let mut compiler = QiitaCompiler {
-                    existing_header: None,
-                };
+                let mut compiler = QiitaCompiler { existing_fm: None };
                 let body = compiler.compile_elements(body);
                 format!(
                     "<details><summary>{}</summary>\n\n{}</details>\n",
@@ -171,13 +160,13 @@ fn image_path_github(path: &str) -> String {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let awk = Command::new("awk")
-        .arg("{print $NF}")
-        .stdin(Stdio::from(grep.stdout.unwrap()))
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut main_branch = String::from_utf8(awk.wait_with_output().unwrap().stdout).unwrap();
+
+    let mut main_branch = String::from_utf8(grep.wait_with_output().unwrap().stdout)
+        .unwrap()
+        .split(' ')
+        .last()
+        .unwrap()
+        .to_string();
 
     if main_branch.is_empty() {
         zeta_error("Failed to get main branch");
@@ -193,7 +182,7 @@ fn image_path_github(path: &str) -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZennHeader {
+pub struct ZennFrontmatter {
     title: String,
     emoji: String,
     r#type: String,
@@ -212,28 +201,26 @@ impl ZennCompiler {
         self.compile_header(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
-    fn compile_header(&mut self, header: ZetaHeader) -> String {
+    fn compile_header(&mut self, frontmatter: ZetaFrontmatter) -> String {
         let mut result = b"---\n".to_vec();
-        let zenn_header = ZennHeader {
-            title: header.title,
-            emoji: header.emoji,
-            r#type: "tech".to_string(),
-            topics: header.topics,
-            published: header.published,
+        let frontmatter = ZennFrontmatter {
+            title: frontmatter.title,
+            emoji: frontmatter.emoji,
+            r#type: frontmatter.r#type,
+            topics: frontmatter.topics,
+            published: frontmatter.published,
         };
         let mut ser = serde_yaml::Serializer::new(&mut result);
-        zenn_header.serialize(&mut ser).unwrap();
+        frontmatter.serialize(&mut ser).unwrap();
         result.extend(b"---\n");
         String::from_utf8(result).unwrap()
     }
 
     fn compile_elements(&mut self, elements: Vec<Element>) -> String {
-        let mut result = String::new();
-        for element in elements {
-            result += &self.compile_element(element);
-        }
-
-        result
+        elements
+            .into_iter()
+            .map(|element| self.compile_element(element))
+            .collect()
     }
 
     fn compile_element(&mut self, element: Element) -> String {
