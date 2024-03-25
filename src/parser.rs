@@ -315,6 +315,7 @@ impl Parser {
 
         let (row, col) = (self.row, self.col);
         self.extract_until("\n:::")?;
+        self.expect_string("\n");
 
         let content = self.consume_buffer().unwrap_or_default();
         let parser = Parser::with_row_col(content.chars().collect(), row, col);
@@ -371,6 +372,7 @@ impl Parser {
         let (row, col) = (self.row, self.col);
 
         self.extract_until("\n:::")?;
+        self.expect_string("\n");
 
         let content = self.consume_buffer().unwrap();
 
@@ -523,9 +525,9 @@ impl Parser {
     }
 
     fn extract_until_unchecked(&mut self, until: &str) {
-        while self.peek() != Some(until.chars().next().expect("until should not be empty"))
-            && !self.matches_keyword(until)
-            && !self.is_at_end()
+        let first_char = until.chars().next().expect("until should not be empty");
+        while !((self.peek() == Some(first_char)) && self.matches_keyword(until)
+            || self.is_at_end())
         {
             self.advance();
         }
