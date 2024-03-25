@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use crate::{
-    ast::{Element, Macro, MarkdownFile, MessageType},
-    print::zeta_error_position,
-};
+use crate::ast::{Element, Macro, MarkdownFile, MessageType};
 
 const SEPARATOR: &str = "---\n";
 const MESSAGE_TAG: &str = "message";
@@ -33,6 +30,7 @@ pub enum ParseErrorType {
     Incomplete(String),
     InvalidFrontMatter,
     InvalidMacro,
+    InvalidMessageType,
 }
 
 impl Display for ParseError {
@@ -51,6 +49,7 @@ impl Display for ParseErrorType {
             ParseErrorType::Incomplete(string) => write!(f, "Incomplete {}", string),
             ParseErrorType::InvalidFrontMatter => write!(f, "Invalid front matter"),
             ParseErrorType::InvalidMacro => write!(f, "Invalid macro"),
+            ParseErrorType::InvalidMessageType => write!(f, "Invalid message type"),
         }
     }
 }
@@ -72,13 +71,17 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(source: Vec<char>) -> Self {
+        Self::with_row_col(source, 1, 1)
+    }
+
+    pub fn with_row_col(source: Vec<char>, row: usize, col: usize) -> Self {
         Self {
             source,
             position: 0,
             start: 0,
 
-            row: 1,
-            col: 1,
+            row,
+            col,
 
             result: Vec::new(),
             errors: Vec::new(),
@@ -303,15 +306,18 @@ impl Parser {
         self.advance_spaces();
 
         self.delete_buffer();
-        self.extract_until_unchecked('\n');
+        self.extract_until_unchecked("\n");
 
         let title = self.consume_buffer().unwrap_or_default();
 
         self.expect_string("\n");
         self.delete_buffer();
-        self.extract_until(":::")?;
+
+        let (row, col) = (self.row, self.col);
+        self.extract_until("\n:::")?;
+
         let content = self.consume_buffer().unwrap_or_default();
-        let parser = Parser::new(content.chars().collect());
+        let parser = Parser::with_row_col(content.chars().collect(), row, col);
         let content = parser.parse();
         match content {
             Ok(content) => {
@@ -352,19 +358,23 @@ impl Parser {
         } else if self.matches_keyword("alert") {
             MessageType::Alert
         } else {
-            zeta_error_position("Invalid message type", self.row, self.col);
-            MessageType::Info
+            return Err(ParseError::new(
+                ParseErrorType::InvalidMessageType,
+                self.row,
+                self.col,
+            ));
         };
 
-        self.extract_until_unchecked('\n');
+        self.extract_until_unchecked("\n");
         self.expect_string("\n");
         self.delete_buffer();
+        let (row, col) = (self.row, self.col);
 
-        self.extract_until(":::")?;
+        self.extract_until("\n:::")?;
 
         let content = self.consume_buffer().unwrap();
 
-        let parser = Parser::new(content.chars().collect());
+        let parser = Parser::with_row_col(content.chars().collect(), row, col);
         let content = parser.parse();
 
         match content {
@@ -389,8 +399,8 @@ impl Parser {
     }
 
     fn code_block(&mut self) -> Result<()> {
+        self.collect_text();
         self.extract_while('`');
-
         self.extract_until("`")?;
 
         self.extract_while('`');
@@ -460,7 +470,9 @@ impl Parser {
         if self.start == self.position {
             None
         } else {
-            let test = self.source.get(self.start..self.position).unwrap();
+            let Some(test) = self.source.get(self.start..self.position) else {
+                return None;
+            };
             self.start = self.position;
             Some(test.iter().collect())
         }
@@ -485,11 +497,9 @@ impl Parser {
 
     fn extract_until(&mut self, end: &str) -> Result<()> {
         let (pos, row, col) = (self.position, self.row, self.col);
-        self.extract_until_unchecked(end.chars().next().expect("end should not be empty"));
+        self.extract_until_unchecked(end);
 
         if self.is_at_end() {
-            zeta_error_position("Incomplete brackets", self.row, self.col);
-
             self.position = pos;
             self.row = row;
             self.col = col;
@@ -512,8 +522,11 @@ impl Parser {
         }
     }
 
-    fn extract_until_unchecked(&mut self, until: char) {
-        while self.peek() != Some(until) && !self.is_at_end() {
+    fn extract_until_unchecked(&mut self, until: &str) {
+        while self.peek() != Some(until.chars().next().expect("until should not be empty"))
+            && !self.matches_keyword(until)
+            && !self.is_at_end()
+        {
             self.advance();
         }
     }
