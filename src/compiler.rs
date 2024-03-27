@@ -1,5 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet}, fs, process::{Command, Stdio}
+    collections::{HashMap, HashSet},
+    fs,
+    process::{Command, Stdio},
 };
 
 use serde::{Deserialize, Serialize};
@@ -107,9 +109,7 @@ impl QiitaCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => {
-                self.compile_elements(macro_info.qiita)
-            }
+            Element::Macro(macro_info) => self.compile_elements(macro_info.qiita),
             Element::Image { alt, url } => {
                 let url = if url.starts_with("/images") {
                     image_path_github(url.as_str())
@@ -127,7 +127,7 @@ impl QiitaCompiler {
                     }
                     i += 1;
                 };
-                
+
                 self.inline_footnotes.insert(name.clone(), content);
 
                 format!("[^{}]", name)
@@ -136,9 +136,12 @@ impl QiitaCompiler {
                 let result = format!("[^{}]", &name);
                 self.footnotes.insert(name);
                 result
-                
             }
-            Element::Message { level: _, msg_type, body } => {
+            Element::Message {
+                level: _,
+                msg_type,
+                body,
+            } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "info",
                     MessageType::Warn => "warn",
@@ -150,7 +153,11 @@ impl QiitaCompiler {
 
                 format!(":::note {}\n{}:::", msg_type, body)
             }
-            Element::Details { level: _, title, body } => {
+            Element::Details {
+                level: _,
+                title,
+                body,
+            } => {
                 let mut compiler = QiitaCompiler::new(None);
                 let body = compiler.compile_elements(body);
                 format!(
@@ -257,15 +264,17 @@ impl ZennCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => {
-                self.compile_elements(macro_info.zenn)
-            }
+            Element::Macro(macro_info) => self.compile_elements(macro_info.zenn),
             Element::Image { alt, url } => {
                 format!("![{}]({})", alt, url)
             }
             Element::InlineFootnote(content) => format!("^[{}]", content),
             Element::Footnote(name) => format!("[^{}]", name),
-            Element::Message { level, msg_type, body } => {
+            Element::Message {
+                level,
+                msg_type,
+                body,
+            } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "",
                     MessageType::Warn => "",
@@ -275,12 +284,22 @@ impl ZennCompiler {
                 let mut compiler = ZennCompiler {};
                 let body = compiler.compile_elements(body);
 
-                format!(":::{0}message {1}\n{2}:::{0}", ":".repeat(level), msg_type, body)
+                format!(
+                    ":::{0}message {1}\n{2}:::{0}",
+                    ":".repeat(level),
+                    msg_type,
+                    body
+                )
             }
             Element::Details { level, title, body } => {
                 let mut compiler = ZennCompiler {};
                 let body = compiler.compile_elements(body);
-                format!(":::{0}details {1}\n{2}:::{0}", ":".repeat(level), title, body)
+                format!(
+                    ":::{0}details {1}\n{2}:::{0}",
+                    ":".repeat(level),
+                    title,
+                    body
+                )
             }
         }
     }

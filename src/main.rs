@@ -1,8 +1,8 @@
 use ast::{ParsedMd, ZetaFrontmatter};
 use clap::{command, Parser, Subcommand};
 use compiler::{QiitaCompiler, QiitaFrontmatter, ZennCompiler};
-use r#macro::Platform;
 use print::{zeta_error, zeta_error_position};
+use r#macro::Platform;
 use scanner::Scanner;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -15,11 +15,11 @@ use crate::print::zeta_message;
 
 mod ast;
 mod compiler;
+mod r#macro;
 mod parser;
 mod print;
 mod scanner;
 mod token;
-mod r#macro;
 
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]

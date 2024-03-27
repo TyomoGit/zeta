@@ -1,6 +1,10 @@
 use std::fmt::Display;
 
-use crate::{ast::{Element, MarkdownDoc, MessageType, ParsedMd, TokenizedMd, ZetaFrontmatter}, r#macro::ParsedMacro, token::{Token, TokenType}};
+use crate::{
+    ast::{Element, MarkdownDoc, MessageType, ParsedMd, TokenizedMd, ZetaFrontmatter},
+    r#macro::ParsedMacro,
+    token::{Token, TokenType},
+};
 
 type Result<T> = std::result::Result<T, ParseError>;
 
@@ -46,8 +50,11 @@ impl Display for ParseErrorType {
             ParseErrorType::InvalidFrontMatter => write!(f, "Invalid front matter"),
             ParseErrorType::InvalidMacro => write!(f, "Invalid macro"),
             ParseErrorType::InvalidMessageType => write!(f, "Invalid message type"),
-            ParseErrorType::InvalidNestingLevel(level) => write!(f, "Invalid nesting level: {}. The nesting level must be smaller than the outer one.", level),
-            
+            ParseErrorType::InvalidNestingLevel(level) => write!(
+                f,
+                "Invalid nesting level: {}. The nesting level must be smaller than the outer one.",
+                level
+            ),
         }
     }
 }
@@ -85,7 +92,6 @@ impl Parser {
             }
         };
 
-        
         let elements = self.parse_body()?;
 
         Ok(ParsedMd {
@@ -156,13 +162,23 @@ impl Parser {
                     "info" => MessageType::Info,
                     "warn" => MessageType::Warn,
                     "alert" => MessageType::Alert,
-                    _ => return Err(ParseError::new(ParseErrorType::InvalidMessageType, token.row, token.col)),
+                    _ => {
+                        return Err(ParseError::new(
+                            ParseErrorType::InvalidMessageType,
+                            token.row,
+                            token.col,
+                        ))
+                    }
                 };
                 self.nest(level, token.row, token.col)?;
                 let body = self.parse_block(Some(TokenType::MessageOrDetailsEnd { level }));
                 self.advance();
                 self.unnest();
-                Element::Message { level, msg_type, body }
+                Element::Message {
+                    level,
+                    msg_type,
+                    body,
+                }
             }
             TokenType::DetailsBegin { level, title } => {
                 self.nest(level, token.row, token.col)?;
@@ -170,29 +186,45 @@ impl Parser {
                 self.advance();
                 self.unnest();
                 Element::Details { level, title, body }
-            },
+            }
             TokenType::MessageOrDetailsEnd { level: _ } => Element::Text("".to_string()),
             TokenType::Macro(macro_info) => {
-                let zenn_parser = Parser::new(MarkdownDoc { frontmatter: String::new(), elements: macro_info.zenn });
+                let zenn_parser = Parser::new(MarkdownDoc {
+                    frontmatter: String::new(),
+                    elements: macro_info.zenn,
+                });
                 let zenn_elements = match zenn_parser.parse_body() {
                     Ok(zenn_elements) => zenn_elements,
                     Err(errors) => {
                         self.errors.extend(errors);
-                        return Err(ParseError::new(ParseErrorType::InvalidMacro, token.row, token.col));
+                        return Err(ParseError::new(
+                            ParseErrorType::InvalidMacro,
+                            token.row,
+                            token.col,
+                        ));
                     }
                 };
 
-                let qiita_parser = Parser::new(MarkdownDoc { frontmatter: String::new(), elements: macro_info.qiita });
+                let qiita_parser = Parser::new(MarkdownDoc {
+                    frontmatter: String::new(),
+                    elements: macro_info.qiita,
+                });
                 let qiita_elements = match qiita_parser.parse_body() {
                     Ok(qiita_elements) => qiita_elements,
                     Err(errors) => {
                         self.errors.extend(errors);
-                        return Err(ParseError::new(ParseErrorType::InvalidMacro, token.row, token.col));
+                        return Err(ParseError::new(
+                            ParseErrorType::InvalidMacro,
+                            token.row,
+                            token.col,
+                        ));
                     }
                 };
 
-                Element::Macro(ParsedMacro { zenn: zenn_elements, qiita: qiita_elements })
-                
+                Element::Macro(ParsedMacro {
+                    zenn: zenn_elements,
+                    qiita: qiita_elements,
+                })
             }
         };
 
@@ -212,7 +244,11 @@ impl Parser {
     fn nest(&mut self, level: usize, row: usize, col: usize) -> Result<()> {
         if let Some(last) = self.nesting_levels.last() {
             if level >= *last {
-                return Err(ParseError::new(ParseErrorType::InvalidNestingLevel(level), row, col));
+                return Err(ParseError::new(
+                    ParseErrorType::InvalidNestingLevel(level),
+                    row,
+                    col,
+                ));
             }
         }
 
@@ -222,6 +258,8 @@ impl Parser {
     }
 
     fn unnest(&mut self) {
-        self.nesting_levels.pop().expect("unnest() should be called only when nesting_levels is not empty");
+        self.nesting_levels
+            .pop()
+            .expect("unnest() should be called only when nesting_levels is not empty");
     }
 }

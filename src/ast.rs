@@ -1,4 +1,7 @@
-use crate::{r#macro::{ParsedMacro, Platform}, token::Token};
+use crate::{
+    r#macro::{ParsedMacro, Platform},
+    token::Token,
+};
 
 #[derive(Debug, Clone)]
 pub struct MarkdownDoc<F, E> {
@@ -8,7 +11,10 @@ pub struct MarkdownDoc<F, E> {
 
 impl<F, E> MarkdownDoc<F, E> {
     pub fn new(frontmatter: F, elements: Vec<E>) -> Self {
-        Self { frontmatter, elements }
+        Self {
+            frontmatter,
+            elements,
+        }
     }
 }
 

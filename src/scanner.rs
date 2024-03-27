@@ -1,7 +1,10 @@
-
 use std::{error::Error, fmt::Display};
 
-use crate::{ast::{ MarkdownDoc, TokenizedMd}, r#macro::{StringMacro, TokenizedMacro}, token::{Token, TokenType}};
+use crate::{
+    ast::{MarkdownDoc, TokenizedMd},
+    r#macro::{StringMacro, TokenizedMacro},
+    token::{Token, TokenType},
+};
 
 const SEPARATOR: &str = "---\n";
 const MESSAGE_TAG: &str = "message";
@@ -17,7 +20,11 @@ pub struct ScanError {
 
 impl ScanError {
     pub fn new(error_type: ScanErrorType, row: usize, col: usize) -> Self {
-        Self { error_type, row, col }
+        Self {
+            error_type,
+            row,
+            col,
+        }
     }
 }
 
@@ -32,7 +39,6 @@ impl Display for ScanErrorType {
         match self {
             ScanErrorType::Incomplete(string) => write!(f, "Incomplete '{}'.", string),
             ScanErrorType::InvalidMacro => write!(f, "Invalid macro."),
-            
         }
     }
 }
@@ -53,7 +59,7 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    pub fn  new(source: Vec<char>) -> Self {
+    pub fn new(source: Vec<char>) -> Self {
         Self::with_row_col(source, 1, 1)
     }
 
@@ -139,7 +145,8 @@ impl Scanner {
                 self.expect_string(")");
                 self.delete_buffer();
 
-                self.tokens.push(self.make_token(TokenType::Image{alt, url}));
+                self.tokens
+                    .push(self.make_token(TokenType::Image { alt, url }));
             }
 
             '^' => {
@@ -154,7 +161,8 @@ impl Scanner {
                 let footnote = self.consume_buffer();
                 self.expect_string("]");
                 self.delete_buffer();
-                self.tokens.push(self.make_token(TokenType::InlineFootnote(footnote)));
+                self.tokens
+                    .push(self.make_token(TokenType::InlineFootnote(footnote)));
             }
 
             '[' => {
@@ -174,7 +182,8 @@ impl Scanner {
                     self.start = start;
                     return Ok(());
                 }
-                self.tokens.push(self.make_token(TokenType::Footnote(footnote)));
+                self.tokens
+                    .push(self.make_token(TokenType::Footnote(footnote)));
             }
 
             '`' => {
@@ -237,10 +246,11 @@ impl Scanner {
                         return Err(ScanError::new(ScanErrorType::InvalidMacro, row, col));
                     }
                 };
-                self.tokens.push(self.make_token(TokenType::Macro(TokenizedMacro {
-                    zenn: zenn_tokens,
-                    qiita: qiita_tokens,
-                })));
+                self.tokens
+                    .push(self.make_token(TokenType::Macro(TokenizedMacro {
+                        zenn: zenn_tokens,
+                        qiita: qiita_tokens,
+                    })));
             }
 
             '\n' => {
@@ -248,7 +258,7 @@ impl Scanner {
                 let Some(c_next) = self.peek() else {
                     return Ok(());
                 };
-        
+
                 self.consume_spaces();
 
                 match c_next {
@@ -294,7 +304,10 @@ impl Scanner {
                             let message_type = self.consume_buffer();
                             self.expect_string("\n");
                             self.delete_buffer();
-                            self.tokens.push(self.make_token(TokenType::MessageBegin { level, r#type: message_type }));
+                            self.tokens.push(self.make_token(TokenType::MessageBegin {
+                                level,
+                                r#type: message_type,
+                            }));
                         } else if self.matches_keyword(DETAILS_TAG) {
                             self.expect_string(DETAILS_TAG);
                             self.consume_spaces();
@@ -303,10 +316,12 @@ impl Scanner {
                             let title = self.consume_buffer();
                             self.expect_string("\n");
                             self.delete_buffer();
-                            self.tokens.push(self.make_token(TokenType::DetailsBegin { level, title }));
+                            self.tokens
+                                .push(self.make_token(TokenType::DetailsBegin { level, title }));
                         } else {
                             self.delete_buffer();
-                            self.tokens.push(self.make_token(TokenType::MessageOrDetailsEnd { level }));
+                            self.tokens
+                                .push(self.make_token(TokenType::MessageOrDetailsEnd { level }));
                         }
                     }
                     _ => (),
@@ -352,10 +367,7 @@ impl Scanner {
 
     fn matches_keyword(&mut self, keyword: &str) -> bool {
         let keyword = keyword.chars().collect::<Vec<char>>();
-        let Some(target) = self
-            .source
-            .get(self.current..self.current + keyword.len())
-        else {
+        let Some(target) = self.source.get(self.current..self.current + keyword.len()) else {
             return false;
         };
 
@@ -368,7 +380,10 @@ impl Scanner {
 
     #[must_use]
     fn consume_buffer(&mut self) -> String {
-        let result = self.source.get(self.start..self.current).unwrap_or_default();
+        let result = self
+            .source
+            .get(self.start..self.current)
+            .unwrap_or_default();
         self.start = self.current;
         result.iter().collect()
     }

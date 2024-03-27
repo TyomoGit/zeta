@@ -1,6 +1,5 @@
 use crate::r#macro::TokenizedMacro;
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub token_type: TokenType,
@@ -24,10 +23,18 @@ pub enum TokenType {
     /// footnote
     Footnote(String),
     /// :::message
-    MessageBegin { level: usize, r#type: String },
+    MessageBegin {
+        level: usize,
+        r#type: String,
+    },
     /// :::details
-    DetailsBegin { level: usize, title: String },
+    DetailsBegin {
+        level: usize,
+        title: String,
+    },
     /// :::
-    MessageOrDetailsEnd { level: usize },
+    MessageOrDetailsEnd {
+        level: usize,
+    },
     Macro(TokenizedMacro),
 }
