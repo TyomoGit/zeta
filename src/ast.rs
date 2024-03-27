@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::{r#macro::{ParsedMacro, Platform}, token::Token};
 
 #[derive(Debug, Clone)]
 pub struct MarkdownDoc<F, E> {
@@ -27,24 +27,6 @@ pub struct ZetaFrontmatter {
     pub only: Option<Platform>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, clap::ValueEnum)]
-pub enum Platform {
-    #[serde(alias = "zenn")]
-    Zenn,
-    #[serde(alias = "qiita")]
-    Qiita,
-}
-
-pub type StringMacro = Macro<Option<String>>;
-pub type TokenizedMacro = Macro<Vec<Token>>;
-pub type ParsedMacro = Macro<Vec<Element>>;
-
-#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
-pub struct Macro<T> {
-    pub zenn: T,
-    pub qiita: T,
-}
-
 #[derive(Debug, Clone)]
 pub enum Element {
     Text(String),
@@ -57,10 +39,12 @@ pub enum Element {
     InlineFootnote(String),
     Footnote(String),
     Message {
+        level: usize,
         msg_type: MessageType,
         body: Vec<Element>,
     },
     Details {
+        level: usize,
         title: String,
         body: Vec<Element>,
     },

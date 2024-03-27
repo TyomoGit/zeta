@@ -1,6 +1,6 @@
-use std::fmt::{Display};
+use std::fmt::Display;
 
-use crate::{ast::{Element, Macro, MarkdownDoc, MessageType, ParsedMd, TokenizedMd, ZetaFrontmatter}, token::{Token, TokenType}};
+use crate::{ast::{Element, MarkdownDoc, MessageType, ParsedMd, TokenizedMd, ZetaFrontmatter}, r#macro::ParsedMacro, token::{Token, TokenType}};
 
 type Result<T> = std::result::Result<T, ParseError>;
 
@@ -21,13 +21,13 @@ impl ParseError {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseErrorType {
-    // Incomplete(String),
     InvalidFrontMatter,
     InvalidMacro,
     InvalidMessageType,
-    UnexpectedToken(TokenType),
+    InvalidNestingLevel(usize),
 }
 
 impl Display for ParseError {
@@ -43,11 +43,11 @@ impl Display for ParseError {
 impl Display for ParseErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // ParseErrorType::Incomplete(string) => write!(f, "Incomplete {}", string),
             ParseErrorType::InvalidFrontMatter => write!(f, "Invalid front matter"),
             ParseErrorType::InvalidMacro => write!(f, "Invalid macro"),
             ParseErrorType::InvalidMessageType => write!(f, "Invalid message type"),
-            ParseErrorType::UnexpectedToken(token_type) => write!(f, "Unexpected token: {:?}", token_type),
+            ParseErrorType::InvalidNestingLevel(level) => write!(f, "Invalid nesting level: {}. The nesting level must be smaller than the outer one.", level),
+            
         }
     }
 }
@@ -60,6 +60,8 @@ pub struct Parser {
 
     position: usize,
 
+    nesting_levels: Vec<usize>,
+
     errors: Vec<ParseError>,
 }
 
@@ -69,6 +71,7 @@ impl Parser {
             source: md.elements,
             frontmatter: md.frontmatter,
             position: 0,
+            nesting_levels: Vec::new(),
             errors: Vec::new(),
         }
     }
@@ -155,16 +158,20 @@ impl Parser {
                     "alert" => MessageType::Alert,
                     _ => return Err(ParseError::new(ParseErrorType::InvalidMessageType, token.row, token.col)),
                 };
+                self.nest(level, token.row, token.col)?;
                 let body = self.parse_block(Some(TokenType::MessageOrDetailsEnd { level }));
                 self.advance();
-                Element::Message { msg_type, body }
+                self.unnest();
+                Element::Message { level, msg_type, body }
             }
             TokenType::DetailsBegin { level, title } => {
+                self.nest(level, token.row, token.col)?;
                 let body = self.parse_block(Some(TokenType::MessageOrDetailsEnd { level }));
                 self.advance();
-                Element::Details { title, body }
+                self.unnest();
+                Element::Details { level, title, body }
             },
-            TokenType::MessageOrDetailsEnd { level } => return Err(ParseError::new(ParseErrorType::UnexpectedToken(TokenType::MessageOrDetailsEnd { level }), token.row, token.col)),
+            TokenType::MessageOrDetailsEnd { level: _ } => Element::Text("".to_string()),
             TokenType::Macro(macro_info) => {
                 let zenn_parser = Parser::new(MarkdownDoc { frontmatter: String::new(), elements: macro_info.zenn });
                 let zenn_elements = match zenn_parser.parse_body() {
@@ -184,7 +191,7 @@ impl Parser {
                     }
                 };
 
-                Element::Macro(Macro { zenn: zenn_elements, qiita: qiita_elements })
+                Element::Macro(ParsedMacro { zenn: zenn_elements, qiita: qiita_elements })
                 
             }
         };
@@ -200,5 +207,21 @@ impl Parser {
 
     fn peek(&mut self) -> Option<&Token> {
         self.source.get(self.position)
+    }
+
+    fn nest(&mut self, level: usize, row: usize, col: usize) -> Result<()> {
+        if let Some(last) = self.nesting_levels.last() {
+            if level >= *last {
+                return Err(ParseError::new(ParseErrorType::InvalidNestingLevel(level), row, col));
+            }
+        }
+
+        self.nesting_levels.push(level);
+
+        Ok(())
+    }
+
+    fn unnest(&mut self) {
+        self.nesting_levels.pop().expect("unnest() should be called only when nesting_levels is not empty");
     }
 }

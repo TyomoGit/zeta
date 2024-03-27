@@ -138,7 +138,7 @@ impl QiitaCompiler {
                 result
                 
             }
-            Element::Message { msg_type, body } => {
+            Element::Message { level: _, msg_type, body } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "info",
                     MessageType::Warn => "warn",
@@ -150,7 +150,7 @@ impl QiitaCompiler {
 
                 format!(":::note {}\n{}:::", msg_type, body)
             }
-            Element::Details { title, body } => {
+            Element::Details { level: _, title, body } => {
                 let mut compiler = QiitaCompiler::new(None);
                 let body = compiler.compile_elements(body);
                 format!(
@@ -265,7 +265,7 @@ impl ZennCompiler {
             }
             Element::InlineFootnote(content) => format!("^[{}]", content),
             Element::Footnote(name) => format!("[^{}]", name),
-            Element::Message { msg_type, body } => {
+            Element::Message { level, msg_type, body } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "",
                     MessageType::Warn => "",
@@ -275,12 +275,12 @@ impl ZennCompiler {
                 let mut compiler = ZennCompiler {};
                 let body = compiler.compile_elements(body);
 
-                format!(":::message {}\n{}:::", msg_type, body)
+                format!(":::{0}message {1}\n{2}:::{0}", ":".repeat(level), msg_type, body)
             }
-            Element::Details { title, body } => {
+            Element::Details { level, title, body } => {
                 let mut compiler = ZennCompiler {};
                 let body = compiler.compile_elements(body);
-                format!(":::details {}\n{}:::", title, body)
+                format!(":::{0}details {1}\n{2}:::{0}", ":".repeat(level), title, body)
             }
         }
     }

@@ -1,6 +1,7 @@
-use ast::{ParsedMd, Platform, ZetaFrontmatter};
+use ast::{ParsedMd, ZetaFrontmatter};
 use clap::{command, Parser, Subcommand};
 use compiler::{QiitaCompiler, QiitaFrontmatter, ZennCompiler};
+use r#macro::Platform;
 use print::{zeta_error, zeta_error_position};
 use scanner::Scanner;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ mod parser;
 mod print;
 mod scanner;
 mod token;
+mod r#macro;
 
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]
@@ -180,8 +182,8 @@ fn build(target: &str) {
 
     if let Some(platform) = &file.frontmatter.only {
         match platform {
-            ast::Platform::Zenn => compile_zenn(file, target),
-            ast::Platform::Qiita => compile_qiita(file, target),
+            Platform::Zenn => compile_zenn(file, target),
+            Platform::Qiita => compile_qiita(file, target),
         }
     } else {
         compile_zenn(file.clone(), target);

@@ -1,7 +1,7 @@
 
 use std::{error::Error, fmt::Display};
 
-use crate::{ast::{Macro, MarkdownDoc, StringMacro, TokenizedMacro, TokenizedMd}, token::{Token, TokenType}};
+use crate::{ast::{ MarkdownDoc, TokenizedMd}, r#macro::{StringMacro, TokenizedMacro}, token::{Token, TokenType}};
 
 const SEPARATOR: &str = "---\n";
 const MESSAGE_TAG: &str = "message";
@@ -30,8 +30,9 @@ pub enum ScanErrorType {
 impl Display for ScanErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScanErrorType::Incomplete(string) => write!(f, "Incomplete '{}'", string),
-            ScanErrorType::InvalidMacro => write!(f, "Invalid macro"),
+            ScanErrorType::Incomplete(string) => write!(f, "Incomplete '{}'.", string),
+            ScanErrorType::InvalidMacro => write!(f, "Invalid macro."),
+            
         }
     }
 }
