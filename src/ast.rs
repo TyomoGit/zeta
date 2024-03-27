@@ -1,8 +1,19 @@
+use crate::token::Token;
+
 #[derive(Debug, Clone)]
-pub struct MarkdownFile {
-    pub frontmatter: ZetaFrontmatter,
-    pub elements: Vec<Element>,
+pub struct MarkdownDoc<F, E> {
+    pub frontmatter: F,
+    pub elements: Vec<E>,
 }
+
+impl<F, E> MarkdownDoc<F, E> {
+    pub fn new(frontmatter: F, elements: Vec<E>) -> Self {
+        Self { frontmatter, elements }
+    }
+}
+
+pub type TokenizedMd = MarkdownDoc<String, Token>;
+pub type ParsedMd = MarkdownDoc<ZetaFrontmatter, Element>;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ZetaFrontmatter {
@@ -24,22 +35,27 @@ pub enum Platform {
     Qiita,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Macro {
-    pub zenn: Option<String>,
-    pub qiita: Option<String>,
+pub type StringMacro = Macro<Option<String>>;
+pub type TokenizedMacro = Macro<Vec<Token>>;
+pub type ParsedMacro = Macro<Vec<Element>>;
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+pub struct Macro<T> {
+    pub zenn: T,
+    pub qiita: T,
 }
 
 #[derive(Debug, Clone)]
 pub enum Element {
     Text(String),
     Url(String),
-    Macro(Macro),
+    Macro(ParsedMacro),
     Image {
         alt: String,
         url: String,
     },
     InlineFootnote(String),
+    Footnote(String),
     Message {
         msg_type: MessageType,
         body: Vec<Element>,

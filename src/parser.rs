@@ -1,10 +1,6 @@
-use std::fmt::Display;
+use std::fmt::{Display};
 
-use crate::ast::{Element, Macro, MarkdownFile, MessageType};
-
-const SEPARATOR: &str = "---\n";
-const MESSAGE_TAG: &str = "message";
-const DETAILS_TAG: &str = "details";
+use crate::{ast::{Element, Macro, MarkdownDoc, MessageType, ParsedMd, TokenizedMd, ZetaFrontmatter}, token::{Token, TokenType}};
 
 type Result<T> = std::result::Result<T, ParseError>;
 
@@ -27,10 +23,11 @@ impl ParseError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseErrorType {
-    Incomplete(String),
+    // Incomplete(String),
     InvalidFrontMatter,
     InvalidMacro,
     InvalidMessageType,
+    UnexpectedToken(TokenType),
 }
 
 impl Display for ParseError {
@@ -46,10 +43,11 @@ impl Display for ParseError {
 impl Display for ParseErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseErrorType::Incomplete(string) => write!(f, "Incomplete {}", string),
+            // ParseErrorType::Incomplete(string) => write!(f, "Incomplete {}", string),
             ParseErrorType::InvalidFrontMatter => write!(f, "Invalid front matter"),
             ParseErrorType::InvalidMacro => write!(f, "Invalid macro"),
             ParseErrorType::InvalidMessageType => write!(f, "Invalid message type"),
+            ParseErrorType::UnexpectedToken(token_type) => write!(f, "Unexpected token: {:?}", token_type),
         }
     }
 }
@@ -57,483 +55,150 @@ impl Display for ParseErrorType {
 impl std::error::Error for ParseError {}
 
 pub struct Parser {
-    source: Vec<char>,
+    source: Vec<Token>,
+    frontmatter: String,
 
     position: usize,
-    start: usize,
 
-    row: usize,
-    col: usize,
-
-    result: Vec<Element>,
     errors: Vec<ParseError>,
 }
 
 impl Parser {
-    pub fn new(source: Vec<char>) -> Self {
-        Self::with_row_col(source, 1, 1)
-    }
-
-    pub fn with_row_col(source: Vec<char>, row: usize, col: usize) -> Self {
+    pub fn new(md: TokenizedMd) -> Self {
         Self {
-            source,
+            source: md.elements,
+            frontmatter: md.frontmatter,
             position: 0,
-            start: 0,
-
-            row,
-            col,
-
-            result: Vec::new(),
             errors: Vec::new(),
         }
     }
 
-    pub fn parse_file(mut self) -> std::result::Result<MarkdownFile, Vec<ParseError>> {
-        self.expect_string(SEPARATOR);
-        self.delete_buffer();
-
-        if let Err(error) = self.extract_until(SEPARATOR) {
-            self.errors.push(error);
-        };
-
-        let header = self.consume_buffer().unwrap();
-
-        self.expect_string(SEPARATOR);
-        self.delete_buffer();
-
-        let yaml_result = serde_yaml::from_str(header.as_str());
-        match yaml_result {
-            Ok(frontmatter) => {
-                let result = self.parse();
-                Ok(MarkdownFile {
-                    frontmatter,
-                    elements: result?,
-                })
-            }
+    pub fn parse(mut self) -> std::result::Result<ParsedMd, Vec<ParseError>> {
+        let frontmatter = match self.parse_frontmatter() {
+            Ok(frontmatter) => frontmatter,
             Err(error) => {
-                let location = error
-                    .location()
-                    .map(|l| (l.line() + 1, l.column()))
-                    .unwrap_or((self.row, self.col));
-                let error =
-                    ParseError::new(ParseErrorType::InvalidFrontMatter, location.0, location.1);
                 self.errors.push(error);
-                Err(self.errors)
+                ZetaFrontmatter::default()
             }
-        }
-    }
-
-    fn parse(mut self) -> std::result::Result<Vec<Element>, Vec<ParseError>> {
-        while !self.is_at_end() {
-            if let Err(error) = self.parse_element() {
-                self.errors.push(error)
-            }
-        }
-
-        self.collect_text();
-
-        if self.errors.is_empty() {
-            Ok(self.result)
-        } else {
-            Err(self.errors)
-        }
-    }
-
-    fn parse_element(&mut self) -> Result<()> {
-        let Some(c) = self.peek() else {
-            return Ok(());
         };
 
-        match c {
-            '[' => {
-                self.square_brackets_or_link()?;
-            }
-            '<' => {
-                if !self.matches_keyword("<macro>") {
-                    self.advance();
-                    return Ok(());
+        
+        let elements = self.parse_body()?;
+
+        Ok(ParsedMd {
+            elements,
+            frontmatter,
+        })
+    }
+
+    fn parse_frontmatter(&mut self) -> Result<ZetaFrontmatter> {
+        let content = &self.frontmatter;
+
+        serde_yaml::from_str::<ZetaFrontmatter>(content).map_err(|error| {
+            let (row, col) = if let Some(location) = error.location() {
+                (location.line(), location.column())
+            } else {
+                (0, 0)
+            };
+
+            ParseError::new(ParseErrorType::InvalidFrontMatter, row, col)
+        })
+    }
+
+    fn parse_body(mut self) -> std::result::Result<Vec<Element>, Vec<ParseError>> {
+        let elements = self.parse_block(None);
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+        Ok(elements)
+    }
+
+    fn parse_block(&mut self, end: Option<TokenType>) -> Vec<Element> {
+        let mut elements = Vec::new();
+
+        while let Some(token) = self.peek() {
+            if let Some(ref end) = end {
+                if token.token_type == *end {
+                    break;
                 }
-
-                self.macro_call()?;
             }
 
-            '^' => {
-                if !self.matches_keyword("^[") {
-                    self.advance();
-                    return Ok(());
+            let element = match self.parse_element() {
+                Ok(element) => element,
+                Err(error) => {
+                    self.errors.push(error);
+                    break;
                 }
-                self.inline_footnote()?;
-            }
+            };
 
-            '`' => {
-                self.code_block()?;
-            }
+            elements.push(element);
+        }
 
-            '\n' => {
-                // block element
+        elements
+    }
 
+    fn parse_element(&mut self) -> Result<Element> {
+        let Some(token) = self.advance().cloned() else {
+            unreachable!("parse_element() should not be called when source is empty");
+        };
+
+        let elem = match token.token_type {
+            TokenType::Text(text) => Element::Text(text),
+            TokenType::Url(url) => Element::Url(url),
+            TokenType::Image { alt, url } => Element::Image { alt, url },
+            TokenType::InlineFootnote(footnote) => Element::InlineFootnote(footnote),
+            TokenType::Footnote(footnote) => Element::Footnote(footnote),
+            TokenType::MessageBegin { level, r#type } => {
+                let msg_type = match r#type.as_str() {
+                    "info" => MessageType::Info,
+                    "warn" => MessageType::Warn,
+                    "alert" => MessageType::Alert,
+                    _ => return Err(ParseError::new(ParseErrorType::InvalidMessageType, token.row, token.col)),
+                };
+                let body = self.parse_block(Some(TokenType::MessageOrDetailsEnd { level }));
                 self.advance();
-
-                self.parse_block_element()?;
+                Element::Message { msg_type, body }
             }
-
-            _ => {
+            TokenType::DetailsBegin { level, title } => {
+                let body = self.parse_block(Some(TokenType::MessageOrDetailsEnd { level }));
                 self.advance();
+                Element::Details { title, body }
+            },
+            TokenType::MessageOrDetailsEnd { level } => return Err(ParseError::new(ParseErrorType::UnexpectedToken(TokenType::MessageOrDetailsEnd { level }), token.row, token.col)),
+            TokenType::Macro(macro_info) => {
+                let zenn_parser = Parser::new(MarkdownDoc { frontmatter: String::new(), elements: macro_info.zenn });
+                let zenn_elements = match zenn_parser.parse_body() {
+                    Ok(zenn_elements) => zenn_elements,
+                    Err(errors) => {
+                        self.errors.extend(errors);
+                        return Err(ParseError::new(ParseErrorType::InvalidMacro, token.row, token.col));
+                    }
+                };
+
+                let qiita_parser = Parser::new(MarkdownDoc { frontmatter: String::new(), elements: macro_info.qiita });
+                let qiita_elements = match qiita_parser.parse_body() {
+                    Ok(qiita_elements) => qiita_elements,
+                    Err(errors) => {
+                        self.errors.extend(errors);
+                        return Err(ParseError::new(ParseErrorType::InvalidMacro, token.row, token.col));
+                    }
+                };
+
+                Element::Macro(Macro { zenn: zenn_elements, qiita: qiita_elements })
+                
             }
-        }
-
-        Ok(())
-    }
-
-    fn parse_block_element(&mut self) -> Result<()> {
-        let Some(c_next) = self.peek() else {
-            return Ok(());
         };
 
-        self.advance_spaces();
-
-        match c_next {
-            'h' => {
-                if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
-                    self.advance();
-                    return Ok(());
-                }
-
-                self.url();
-            }
-            ':' => {
-                if self.matches_keyword(format!(":::{DETAILS_TAG}").as_str()) {
-                    self.details()?;
-                } else if self.matches_keyword(format!(":::{MESSAGE_TAG}").as_str()) {
-                    self.message()?;
-                }
-            }
-
-            '!' => {
-                if !self.matches_keyword("![") {
-                    return Ok(());
-                }
-                self.image()?;
-            }
-            _ => (),
-        }
-
-        Ok(())
+        Ok(elem)
     }
 
-    fn square_brackets_or_link(&mut self) -> Result<()> {
-        self.extract_until("]")?;
-        self.expect_string("]");
-
-        if self.matches_keyword("(") {
-            self.extract_until(")")?;
-            self.expect_string(")");
-        }
-
-        Ok(())
-    }
-
-    fn macro_call(&mut self) -> Result<()> {
-        self.collect_text();
-
-        self.expect_string("<macro>");
-        self.delete_buffer();
-
-        self.extract_until("</macro>")?;
-
-        let macro_yaml = self.consume_buffer().unwrap_or_default();
-
-        self.expect_string("</macro>");
-        self.delete_buffer();
-
-        let Ok(macro_yaml): std::result::Result<Macro, _> =
-            serde_yaml::from_str(macro_yaml.as_str())
-        else {
-            return Err(ParseError::new(
-                ParseErrorType::InvalidMacro,
-                self.row,
-                self.col,
-            ));
-        };
-
-        self.result.push(Element::Macro(macro_yaml));
-
-        Ok(())
-    }
-
-    fn inline_footnote(&mut self) -> Result<()> {
-        self.collect_text();
-
-        self.expect_string("^[");
-        self.delete_buffer();
-
-        self.extract_until("]")?;
-
-        let inline_footnote = self.consume_buffer().unwrap();
-        self.result.push(Element::InlineFootnote(inline_footnote));
-
-        self.expect_string("]");
-        self.delete_buffer();
-
-        Ok(())
-    }
-
-    fn url(&mut self) {
-        self.collect_text();
-
-        while let Some(c) = self.peek() {
-            if c.is_whitespace() {
-                break;
-            }
-            if self.is_at_end() {
-                break;
-            }
-            self.advance();
-        }
-
-        let url = self.consume_buffer().unwrap();
-        self.result.push(Element::Url(url));
-    }
-
-    fn details(&mut self) -> Result<()> {
-        self.collect_text();
-        while matches!(self.peek(), Some(':')) {
-            self.advance();
-        }
-
-        self.expect_string(DETAILS_TAG);
-
-        self.advance_spaces();
-
-        self.delete_buffer();
-        self.extract_until_unchecked("\n");
-
-        let title = self.consume_buffer().unwrap_or_default();
-
-        self.expect_string("\n");
-        self.delete_buffer();
-
-        let (row, col) = (self.row, self.col);
-        self.extract_until("\n:::")?;
-        self.expect_string("\n");
-
-        let content = self.consume_buffer().unwrap_or_default();
-        let parser = Parser::with_row_col(content.chars().collect(), row, col);
-        let content = parser.parse();
-        match content {
-            Ok(content) => {
-                self.result.push(Element::Details {
-                    title,
-                    body: content,
-                });
-            }
-            Err(errors) => {
-                self.errors.extend(errors);
-            }
-        }
-
-        while matches!(self.peek(), Some(':')) {
-            self.advance();
-        }
-
-        self.delete_buffer();
-
-        Ok(())
-    }
-
-    fn message(&mut self) -> Result<()> {
-        self.collect_text();
-
-        while matches!(self.peek(), Some(':')) {
-            self.advance();
-        }
-
-        self.expect_string(MESSAGE_TAG);
-
-        self.advance_spaces();
-
-        let message_type = if self.matches_keyword("info") {
-            MessageType::Info
-        } else if self.matches_keyword("warn") {
-            MessageType::Warn
-        } else if self.matches_keyword("alert") {
-            MessageType::Alert
-        } else {
-            return Err(ParseError::new(
-                ParseErrorType::InvalidMessageType,
-                self.row,
-                self.col,
-            ));
-        };
-
-        self.extract_until_unchecked("\n");
-        self.expect_string("\n");
-        self.delete_buffer();
-        let (row, col) = (self.row, self.col);
-
-        self.extract_until("\n:::")?;
-        self.expect_string("\n");
-
-        let content = self.consume_buffer().unwrap();
-
-        let parser = Parser::with_row_col(content.chars().collect(), row, col);
-        let content = parser.parse();
-
-        match content {
-            Ok(content) => {
-                self.result.push(Element::Message {
-                    msg_type: message_type,
-                    body: content,
-                });
-            }
-            Err(errors) => {
-                self.errors.extend(errors);
-            }
-        }
-
-        while matches!(self.peek(), Some(':')) {
-            self.advance();
-        }
-
-        self.delete_buffer();
-
-        Ok(())
-    }
-
-    fn code_block(&mut self) -> Result<()> {
-        self.collect_text();
-        self.extract_while('`');
-        self.extract_until("`")?;
-
-        self.extract_while('`');
-
-        Ok(())
-    }
-
-    fn image(&mut self) -> Result<()> {
-        self.collect_text();
-        self.expect_string("![");
-        self.delete_buffer();
-
-        self.extract_until("]")?;
-
-        let alt = self.consume_buffer().unwrap_or_default();
-        self.expect_string("](");
-        self.delete_buffer();
-
-        self.extract_until(")")?;
-
-        let url = self.consume_buffer().unwrap();
-        self.expect_string(")");
-        self.delete_buffer();
-
-        self.result.push(Element::Image { alt, url });
-
-        Ok(())
-    }
-
-    fn advance(&mut self) -> Option<char> {
-        let result = self.source.get(self.position).copied();
+    fn advance(&mut self) -> Option<&Token> {
+        let result = self.source.get(self.position);
         self.position += 1;
-        if let Some('\n') = result {
-            self.row += 1;
-            self.col = 1;
-        } else {
-            self.col += 1;
-        }
-
         result
     }
 
-    fn peek(&mut self) -> Option<char> {
-        self.source.get(self.position).copied()
-    }
-
-    fn matches_keyword(&mut self, keyword: &str) -> bool {
-        let Some(target) = self
-            .source
-            .get(self.position..self.position + keyword.len())
-        else {
-            return false;
-        };
-
-        target.iter().cloned().eq(keyword.chars())
-    }
-
-    fn is_at_end(&mut self) -> bool {
-        self.position >= self.source.len()
-    }
-
-    fn delete_buffer(&mut self) {
-        self.start = self.position;
-    }
-
-    fn consume_buffer(&mut self) -> Option<String> {
-        if self.start == self.position {
-            None
-        } else {
-            let Some(test) = self.source.get(self.start..self.position) else {
-                return None;
-            };
-            self.start = self.position;
-            Some(test.iter().collect())
-        }
-    }
-
-    fn expect_string(&mut self, string: &str) -> bool {
-        if self.matches_keyword(string) {
-            (0..string.len()).for_each(|_| {
-                self.advance();
-            });
-            true
-        } else {
-            false
-        }
-    }
-
-    fn collect_text(&mut self) {
-        if let Some(buffer) = self.consume_buffer() {
-            self.result.push(Element::Text(buffer));
-        }
-    }
-
-    fn extract_until(&mut self, end: &str) -> Result<()> {
-        let (pos, row, col) = (self.position, self.row, self.col);
-        self.extract_until_unchecked(end);
-
-        if self.is_at_end() {
-            self.position = pos;
-            self.row = row;
-            self.col = col;
-
-            self.advance();
-
-            return Err(ParseError::new(
-                ParseErrorType::Incomplete(end.to_string()),
-                self.row,
-                self.col,
-            ));
-        }
-
-        Ok(())
-    }
-
-    fn extract_while(&mut self, char: char) {
-        while self.peek() == Some(char) && !self.is_at_end() {
-            self.advance();
-        }
-    }
-
-    fn extract_until_unchecked(&mut self, until: &str) {
-        let first_char = until.chars().next().expect("until should not be empty");
-        while !((self.peek() == Some(first_char)) && self.matches_keyword(until)
-            || self.is_at_end())
-        {
-            self.advance();
-        }
-    }
-
-    fn advance_spaces(&mut self) {
-        self.extract_while(' ');
+    fn peek(&mut self) -> Option<&Token> {
+        self.source.get(self.position)
     }
 }

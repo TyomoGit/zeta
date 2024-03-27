@@ -1,12 +1,11 @@
 use std::{
-    fs,
-    process::{Command, Stdio},
+    collections::{HashMap, HashSet}, fs, process::{Command, Stdio}
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ast::{Element, MarkdownFile, MessageType, ZetaFrontmatter},
+    ast::{Element, MessageType, ParsedMd, ZetaFrontmatter},
     print::zeta_error,
     Settings,
 };
@@ -26,16 +25,20 @@ pub struct QiitaFrontmatter {
 
 pub struct QiitaCompiler {
     existing_fm: Option<QiitaFrontmatter>,
+    footnotes: HashSet<String>,
+    inline_footnotes: HashMap<String, String>,
 }
 
 impl QiitaCompiler {
     pub fn new(existing_header: Option<QiitaFrontmatter>) -> Self {
         Self {
             existing_fm: existing_header,
+            footnotes: HashSet::new(),
+            inline_footnotes: HashMap::new(),
         }
     }
 
-    pub fn compile(mut self, file: MarkdownFile) -> String {
+    pub fn compile(mut self, file: ParsedMd) -> String {
         self.compile_frontmatter(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
@@ -88,17 +91,25 @@ impl QiitaCompiler {
     }
 
     fn compile_elements(&mut self, elements: Vec<Element>) -> String {
-        elements
+        let mut result: String = elements
             .into_iter()
             .map(|element| self.compile_element(element))
-            .collect()
+            .collect();
+
+        for (name, content) in &self.inline_footnotes {
+            result.push_str(&format!("\n[^{}]: {}\n", name, content));
+        }
+
+        result
     }
 
     fn compile_element(&mut self, element: Element) -> String {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => macro_info.qiita.unwrap_or_default(),
+            Element::Macro(macro_info) => {
+                self.compile_elements(macro_info.qiita)
+            }
             Element::Image { alt, url } => {
                 let url = if url.starts_with("/images") {
                     image_path_github(url.as_str())
@@ -107,7 +118,26 @@ impl QiitaCompiler {
                 };
                 format!("![{}]({})", alt, url)
             }
-            Element::InlineFootnote(name) => format!("[^{}]", name),
+            Element::InlineFootnote(content) => {
+                let mut i: usize = 1;
+                let name = loop {
+                    let name = format!("zeta.inline.{}", i);
+                    if !self.inline_footnotes.contains_key(&name) {
+                        break name;
+                    }
+                    i += 1;
+                };
+                
+                self.inline_footnotes.insert(name.clone(), content);
+
+                format!("[^{}]", name)
+            }
+            Element::Footnote(name) => {
+                let result = format!("[^{}]", &name);
+                self.footnotes.insert(name);
+                result
+                
+            }
             Element::Message { msg_type, body } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "info",
@@ -115,13 +145,13 @@ impl QiitaCompiler {
                     MessageType::Alert => "alert",
                 };
 
-                let mut compiler = QiitaCompiler { existing_fm: None };
+                let mut compiler = QiitaCompiler::new(None);
                 let body = compiler.compile_elements(body);
 
                 format!(":::note {}\n{}:::", msg_type, body)
             }
             Element::Details { title, body } => {
-                let mut compiler = QiitaCompiler { existing_fm: None };
+                let mut compiler = QiitaCompiler::new(None);
                 let body = compiler.compile_elements(body);
                 format!(
                     "<details><summary>{}</summary>\n\n{}</details>\n",
@@ -197,7 +227,7 @@ impl ZennCompiler {
         Self {}
     }
 
-    pub fn compile(mut self, file: MarkdownFile) -> String {
+    pub fn compile(mut self, file: ParsedMd) -> String {
         self.compile_header(file.frontmatter) + &self.compile_elements(file.elements)
     }
 
@@ -227,11 +257,14 @@ impl ZennCompiler {
         match element {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
-            Element::Macro(macro_info) => macro_info.zenn.unwrap_or_default(),
+            Element::Macro(macro_info) => {
+                self.compile_elements(macro_info.zenn)
+            }
             Element::Image { alt, url } => {
                 format!("![{}]({})", alt, url)
             }
-            Element::InlineFootnote(name) => format!("^[{}]", name),
+            Element::InlineFootnote(content) => format!("^[{}]", content),
+            Element::Footnote(name) => format!("[^{}]", name),
             Element::Message { msg_type, body } => {
                 let msg_type = match msg_type {
                     MessageType::Info => "",

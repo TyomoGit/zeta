@@ -1,7 +1,8 @@
-use ast::{MarkdownFile, Platform, ZetaFrontmatter};
+use ast::{ParsedMd, Platform, ZetaFrontmatter};
 use clap::{command, Parser, Subcommand};
 use compiler::{QiitaCompiler, QiitaFrontmatter, ZennCompiler};
 use print::{zeta_error, zeta_error_position};
+use scanner::Scanner;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, DirBuilder},
@@ -15,6 +16,8 @@ mod ast;
 mod compiler;
 mod parser;
 mod print;
+mod scanner;
+mod token;
 
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]
@@ -153,13 +156,26 @@ fn build(target: &str) {
         return;
     };
 
-    let parser = parser::Parser::new(file.chars().collect());
-    let result = parser.parse_file();
-    let Ok(file) = result else {
-        result.unwrap_err().iter().for_each(|error| {
-            zeta_error_position(&error.error_type.to_string(), error.row, error.col);
-        });
-        return;
+    let scanner = Scanner::new(file.chars().collect());
+    let markdown = match scanner.scan_file() {
+        Ok(file) => file,
+        Err(errors) => {
+            errors.iter().for_each(|error| {
+                zeta_error_position(&error.error_type.to_string(), error.row, error.col);
+            });
+            return;
+        }
+    };
+
+    let parser = parser::Parser::new(markdown);
+    let file = match parser.parse() {
+        Ok(file) => file,
+        Err(errors) => {
+            errors.iter().for_each(|error| {
+                zeta_error_position(&error.error_type.to_string(), error.row, error.col);
+            });
+            return;
+        }
     };
 
     if let Some(platform) = &file.frontmatter.only {
@@ -173,13 +189,13 @@ fn build(target: &str) {
     }
 }
 
-fn compile_zenn(file: MarkdownFile, target: &str) {
+fn compile_zenn(file: ParsedMd, target: &str) {
     let compiler = ZennCompiler::new();
     let zenn_md = compiler.compile(file);
     fs::write(format!("articles/{}.md", target), zenn_md).unwrap();
 }
 
-fn compile_qiita(file: MarkdownFile, target: &str) {
+fn compile_qiita(file: ParsedMd, target: &str) {
     let existing_header =
         if let Ok(existing_file) = fs::read_to_string(format!("public/{}.md", target)) {
             let existing_file = &existing_file[4..];
