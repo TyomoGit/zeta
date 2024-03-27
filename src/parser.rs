@@ -32,6 +32,7 @@ pub enum ParseErrorType {
     InvalidMacro,
     InvalidMessageType,
     InvalidNestingLevel(usize),
+    CouldNotFindEndToken(TokenType),
 }
 
 impl Display for ParseError {
@@ -54,6 +55,11 @@ impl Display for ParseErrorType {
                 f,
                 "Invalid nesting level: {}. The nesting level must be smaller than the outer one.",
                 level
+            ),
+            ParseErrorType::CouldNotFindEndToken(token_type) => write!(
+                f,
+                "Could not find end token: {:?}.",
+                token_type
             ),
         }
     }
@@ -141,6 +147,16 @@ impl Parser {
             };
 
             elements.push(element);
+        }
+
+        if let Some(end) = end {
+            if self.peek().is_none() {
+                self.errors.push(ParseError::new(
+                    ParseErrorType::CouldNotFindEndToken(end),
+                        0,
+                        0
+                ));
+            }
         }
 
         elements
