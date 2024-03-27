@@ -316,7 +316,6 @@ impl Scanner {
                     self.delete_buffer();
                     self.extract_until("\n")?;
                     let message_type = self.consume_buffer();
-                    self.expect_string("\n");
                     self.delete_buffer();
                     self.tokens.push(self.make_token(TokenType::MessageBegin {
                         level,
@@ -328,7 +327,6 @@ impl Scanner {
                     self.delete_buffer();
                     self.extract_until("\n")?;
                     let title = self.consume_buffer();
-                    self.expect_string("\n");
                     self.delete_buffer();
                     self.tokens
                         .push(self.make_token(TokenType::DetailsBegin { level, title }));

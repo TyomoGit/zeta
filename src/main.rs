@@ -168,6 +168,7 @@ fn build(target: &str) {
             return;
         }
     };
+    dbg!(&markdown.elements);
 
     let parser = parser::Parser::new(markdown);
     let file = match parser.parse() {

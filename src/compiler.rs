@@ -161,7 +161,7 @@ impl QiitaCompiler {
                 let mut compiler = QiitaCompiler::new(None);
                 let body = compiler.compile_elements(body);
                 format!(
-                    "<details><summary>{}</summary>\n\n{}</details>\n",
+                    "<details><summary>{}</summary>\n{}</details>\n",
                     title, body
                 )
             }
@@ -285,7 +285,7 @@ impl ZennCompiler {
                 let body = compiler.compile_elements(body);
 
                 format!(
-                    ":::{0}message {1}\n{2}:::{0}",
+                    ":::{0}message {1}{2}:::{0}",
                     ":".repeat(level),
                     msg_type,
                     body
@@ -295,7 +295,7 @@ impl ZennCompiler {
                 let mut compiler = ZennCompiler {};
                 let body = compiler.compile_elements(body);
                 format!(
-                    ":::{0}details {1}\n{2}:::{0}",
+                    ":::{0}details {1}{2}:::{0}",
                     ":".repeat(level),
                     title,
                     body
