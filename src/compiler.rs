@@ -41,7 +41,12 @@ impl QiitaCompiler {
     }
 
     pub fn compile(mut self, file: ParsedMd) -> String {
-        self.compile_frontmatter(file.frontmatter) + &self.compile_elements(file.elements)
+        let mut result = self.compile_frontmatter(file.frontmatter) + &self.compile_elements(file.elements);
+        for (name, content) in &self.inline_footnotes {
+            result.push_str(&format!("\n[^{}]: {}\n", name, content));
+        }
+
+        result
     }
 
     fn compile_frontmatter(&mut self, frontmatter: ZetaFrontmatter) -> String {
@@ -93,16 +98,10 @@ impl QiitaCompiler {
     }
 
     fn compile_elements(&mut self, elements: Vec<Element>) -> String {
-        let mut result: String = elements
+        elements
             .into_iter()
             .map(|element| self.compile_element(element))
-            .collect();
-
-        for (name, content) in &self.inline_footnotes {
-            result.push_str(&format!("\n[^{}]: {}\n", name, content));
-        }
-
-        result
+            .collect()
     }
 
     fn compile_element(&mut self, element: Element) -> String {
