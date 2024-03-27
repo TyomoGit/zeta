@@ -84,7 +84,14 @@ impl Scanner {
             }
         };
 
-        let body = self.scan_body()?;
+        self.source.insert(self.current, '\n');
+
+        let mut body = self.scan_body()?;
+        if let Some(first) = body.first_mut() {
+            if let TokenType::Text(text) = &mut first.token_type {
+                *text = text.get(1..).unwrap_or_default().to_string();
+            }
+        }
 
         Ok(MarkdownDoc::new(frontmatter, body))
     }
@@ -222,25 +229,19 @@ impl Scanner {
                     ScanError::new(ScanErrorType::InvalidMacro, row, col)
                 })?;
 
-                let zenn = format!("\n{}", yaml.zenn.unwrap_or_default());
+                let zenn = yaml.zenn.unwrap_or_default();
                 let scanner = Scanner::with_row_col(zenn.chars().collect(), row, col);
                 let zenn_tokens = match scanner.scan_body() {
-                    Ok(mut tokens) => {
-                        tokens.pop();
-                        tokens
-                    }
+                    Ok(tokens) => tokens,
                     Err(errors) => {
                         self.errors.extend(errors);
                         return Err(ScanError::new(ScanErrorType::InvalidMacro, row, col));
                     }
                 };
-                let qiita = format!("\n{}", yaml.qiita.unwrap_or_default());
+                let qiita = yaml.qiita.unwrap_or_default();
                 let scanner = Scanner::with_row_col(qiita.chars().collect(), row, col);
                 let qiita_tokens = match scanner.scan_body() {
-                    Ok(mut tokens) => {
-                        tokens.pop();
-                        tokens
-                    }
+                    Ok(tokens) => tokens,
                     Err(errors) => {
                         self.errors.extend(errors);
                         return Err(ScanError::new(ScanErrorType::InvalidMacro, row, col));
@@ -255,82 +256,89 @@ impl Scanner {
 
             '\n' => {
                 self.advance();
-                let Some(c_next) = self.peek() else {
-                    return Ok(());
-                };
-
-                self.consume_spaces();
-
-                match c_next {
-                    'h' => {
-                        if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
-                            self.advance();
-                            return Ok(());
-                        }
-
-                        self.collect_text();
-
-                        while let Some(c) = self.peek() {
-                            if c.is_whitespace() {
-                                break;
-                            }
-                            if self.is_at_end() {
-                                break;
-                            }
-                            self.advance();
-                        }
-
-                        let url = self.consume_buffer();
-                        self.tokens.push(self.make_token(TokenType::Url(url)));
-                    }
-                    ':' => {
-                        if !self.matches_keyword(":::") {
-                            return Ok(());
-                        }
-
-                        self.collect_text();
-                        self.expect_string(":::");
-                        let mut level: usize = 0;
-
-                        while self.expect_string(":") {
-                            level += 1;
-                        }
-
-                        if self.matches_keyword(MESSAGE_TAG) {
-                            self.expect_string(MESSAGE_TAG);
-                            self.consume_spaces();
-                            self.delete_buffer();
-                            self.extract_until("\n")?;
-                            let message_type = self.consume_buffer();
-                            self.expect_string("\n");
-                            self.delete_buffer();
-                            self.tokens.push(self.make_token(TokenType::MessageBegin {
-                                level,
-                                r#type: message_type,
-                            }));
-                        } else if self.matches_keyword(DETAILS_TAG) {
-                            self.expect_string(DETAILS_TAG);
-                            self.consume_spaces();
-                            self.delete_buffer();
-                            self.extract_until("\n")?;
-                            let title = self.consume_buffer();
-                            self.expect_string("\n");
-                            self.delete_buffer();
-                            self.tokens
-                                .push(self.make_token(TokenType::DetailsBegin { level, title }));
-                        } else {
-                            self.delete_buffer();
-                            self.tokens
-                                .push(self.make_token(TokenType::MessageOrDetailsEnd { level }));
-                        }
-                    }
-                    _ => (),
-                }
+                
+                self.block_element()?;
             }
 
             _ => {
                 self.advance();
             }
+        }
+
+        Ok(())
+    }
+
+    fn block_element(&mut self) -> Result<()> {
+        let Some(c_next) = self.peek() else {
+            return Ok(());
+        };
+
+        self.consume_spaces();
+
+        match c_next {
+            'h' => {
+                if !(self.matches_keyword("https://") || self.matches_keyword("http://")) {
+                    self.advance();
+                    return Ok(());
+                }
+
+                self.collect_text();
+
+                while let Some(c) = self.peek() {
+                    if c.is_whitespace() {
+                        break;
+                    }
+                    if self.is_at_end() {
+                        break;
+                    }
+                    self.advance();
+                }
+
+                let url = self.consume_buffer();
+                self.tokens.push(self.make_token(TokenType::Url(url)));
+            }
+            ':' => {
+                if !self.matches_keyword(":::") {
+                    return Ok(());
+                }
+
+                self.collect_text();
+                self.expect_string(":::");
+                let mut level: usize = 0;
+
+                while self.expect_string(":") {
+                    level += 1;
+                }
+
+                if self.matches_keyword(MESSAGE_TAG) {
+                    self.expect_string(MESSAGE_TAG);
+                    self.consume_spaces();
+                    self.delete_buffer();
+                    self.extract_until("\n")?;
+                    let message_type = self.consume_buffer();
+                    self.expect_string("\n");
+                    self.delete_buffer();
+                    self.tokens.push(self.make_token(TokenType::MessageBegin {
+                        level,
+                        r#type: message_type,
+                    }));
+                } else if self.matches_keyword(DETAILS_TAG) {
+                    self.expect_string(DETAILS_TAG);
+                    self.consume_spaces();
+                    self.delete_buffer();
+                    self.extract_until("\n")?;
+                    let title = self.consume_buffer();
+                    self.expect_string("\n");
+                    self.delete_buffer();
+                    self.tokens
+                        .push(self.make_token(TokenType::DetailsBegin { level, title }));
+                } else {
+                    self.delete_buffer();
+                    self.tokens
+                        .push(self.make_token(TokenType::MessageOrDetailsEnd { level }));
+                }
+            }
+            _ => (),
         }
 
         Ok(())
