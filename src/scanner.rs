@@ -12,6 +12,7 @@ const DETAILS_TAG: &str = "details";
 
 type Result<T> = std::result::Result<T, ScanError>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanError {
     pub error_type: ScanErrorType,
     pub row: usize,
@@ -45,6 +46,7 @@ impl Display for ScanErrorType {
 
 impl Error for ScanErrorType {}
 
+#[derive(Debug, Clone)]
 pub struct Scanner {
     source: Vec<char>,
 
