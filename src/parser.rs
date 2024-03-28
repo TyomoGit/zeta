@@ -6,6 +6,8 @@ use crate::{
     token::{Token, TokenType},
 };
 
+const FRONTMATTER_TOPICS_MAX: usize = 5;
+
 type Result<T> = std::result::Result<T, ParseError>;
 
 #[derive(Debug, Clone)]
@@ -28,6 +30,7 @@ impl ParseError {
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseErrorType {
+    TooManyTopics(Vec<String>),
     InvalidFrontMatter,
     InvalidMacro,
     InvalidMessageType,
@@ -48,6 +51,12 @@ impl Display for ParseError {
 impl Display for ParseErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ParseErrorType::TooManyTopics(topics) => write!(
+                f,
+                "Too many topics: [{}]. The maximum number of topics is {}.",
+                topics.join(", "),
+                FRONTMATTER_TOPICS_MAX
+            ),
             ParseErrorType::InvalidFrontMatter => write!(f, "Invalid front matter"),
             ParseErrorType::InvalidMacro => write!(f, "Invalid macro"),
             ParseErrorType::InvalidMessageType => write!(f, "Invalid message type"),
@@ -109,7 +118,7 @@ impl Parser {
     fn parse_frontmatter(&mut self) -> Result<ZetaFrontmatter> {
         let content = &self.frontmatter;
 
-        serde_yaml::from_str::<ZetaFrontmatter>(content).map_err(|error| {
+        let result = serde_yaml::from_str::<ZetaFrontmatter>(content).map_err(|error| {
             let (row, col) = if let Some(location) = error.location() {
                 (location.line(), location.column())
             } else {
@@ -117,7 +126,19 @@ impl Parser {
             };
 
             ParseError::new(ParseErrorType::InvalidFrontMatter, row, col)
-        })
+        });
+
+        if let Ok(frontmatter) = &result {
+            if frontmatter.topics.len() > FRONTMATTER_TOPICS_MAX {
+                return Err(ParseError::new(
+                    ParseErrorType::TooManyTopics(frontmatter.topics.clone()),
+                    0,
+                    0,
+                ));
+            }
+        }
+
+        result
     }
 
     fn parse_body(mut self) -> std::result::Result<Vec<Element>, Vec<ParseError>> {
