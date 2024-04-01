@@ -192,6 +192,7 @@ impl Parser {
             TokenType::Text(text) => Element::Text(text),
             TokenType::Url(url) => Element::Url(url),
             TokenType::Image { alt, url } => Element::Image { alt, url },
+            TokenType::LinkCard { card_type, url } => Element::LinkCard { card_type, url },
             TokenType::InlineFootnote(footnote) => Element::InlineFootnote(footnote),
             TokenType::Footnote(footnote) => Element::Footnote(footnote),
             TokenType::MessageBegin { level, r#type } => {

@@ -13,6 +13,11 @@ pub enum TokenType {
     Text(String),
     /// http:// or https://
     Url(String),
+    ///LinkCard
+    LinkCard {
+        card_type: String,
+        url: String,
+    },
     /// image
     Image {
         alt: String,
