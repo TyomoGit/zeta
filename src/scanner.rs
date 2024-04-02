@@ -158,6 +158,31 @@ impl Scanner {
                     .push(self.make_token(TokenType::Image { alt, url }));
             }
 
+            '@' => {
+                if !self.matches_keyword("@[") {
+                    self.advance();
+                    return Ok(());
+                }
+                self.collect_text();
+                self.expect_string("@[");
+                self.delete_buffer();
+
+                self.extract_until("]")?;
+
+                let card_type = self.consume_buffer();
+                self.expect_string("](");
+                self.delete_buffer();
+
+                self.extract_until(")")?;
+
+                let url = self.consume_buffer();
+                self.expect_string(")");
+                self.delete_buffer();
+
+                self.tokens
+                    .push(self.make_token(TokenType::LinkCard { card_type, url }));
+            }
+
             '^' => {
                 if !self.matches_keyword("^[") {
                     self.advance();

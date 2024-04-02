@@ -109,6 +109,14 @@ impl QiitaCompiler {
             Element::Text(text) => text,
             Element::Url(url) => format!("\n{}\n", url),
             Element::Macro(macro_info) => self.compile_elements(macro_info.qiita),
+            Element::LinkCard { card_type: _ , url } => {
+                let url = if url.starts_with("/images") {
+                    image_path_github(url.as_str())
+                } else {
+                    url
+                };
+                format!("\n{}\n", url)
+            }
             Element::Image { alt, url } => {
                 let url = if url.starts_with("/images") {
                     image_path_github(url.as_str())
@@ -262,8 +270,11 @@ impl ZennCompiler {
     fn compile_element(&mut self, element: Element) -> String {
         match element {
             Element::Text(text) => text,
-            Element::Url(url) => format!("\n{}\n", url),
+            Element::Url(url) => format!("{}", url),
             Element::Macro(macro_info) => self.compile_elements(macro_info.zenn),
+            Element::LinkCard { card_type, url } => {
+                format!("@[{}]({})", card_type, url)
+            }
             Element::Image { alt, url } => {
                 format!("![{}]({})", alt, url)
             }

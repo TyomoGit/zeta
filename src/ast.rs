@@ -38,6 +38,10 @@ pub enum Element {
     Text(String),
     Url(String),
     Macro(ParsedMacro),
+    LinkCard {
+        card_type: String,
+        url: String,
+    },
     Image {
         alt: String,
         url: String,
