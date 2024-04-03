@@ -1,12 +1,17 @@
 use crate::r#macro::TokenizedMacro;
 
+/// Markdown Token
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
+    /// Token type
     pub token_type: TokenType,
+    /// Row position of the token
     pub row: usize,
+    /// Column position of the token
     pub col: usize,
 }
 
+/// Token type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
     /// string
@@ -41,5 +46,6 @@ pub enum TokenType {
     MessageOrDetailsEnd {
         level: usize,
     },
+    /// <macro></macro>
     Macro(TokenizedMacro),
 }

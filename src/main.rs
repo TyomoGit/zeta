@@ -21,6 +21,7 @@ mod print;
 mod scanner;
 mod token;
 
+/// Command line interface
 #[derive(Debug, Clone, clap::Parser)]
 #[command(version, about)]
 struct Cli {
