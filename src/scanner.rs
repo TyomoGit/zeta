@@ -489,3 +489,31 @@ impl Scanner {
         self.extract_while(' ');
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vec_chars(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    #[test]
+    fn scan_frontmatter() {
+        let mut scanner = Scanner::new(vec_chars("---\n---\n"));
+        assert_eq!(scanner.scan_frontmatter().unwrap(), "");
+
+        let mut scanner = Scanner::new(vec_chars("---\na---\n"));
+        assert_eq!(scanner.scan_frontmatter().unwrap(), "a");
+
+        let mut scanner = Scanner::new(vec_chars("------\n------\n----"));
+        assert_eq!(scanner.scan_frontmatter().unwrap(), "---");
+    }
+
+    #[test]
+    fn extract_until_unchecked() {
+        let mut scanner = Scanner::new(vec_chars("hello, world"));
+        scanner.extract_until_unchecked("hello");
+        assert_eq!(scanner.current, 0);
+    }
+}
