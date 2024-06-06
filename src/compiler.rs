@@ -58,7 +58,13 @@ impl QiitaCompiler {
                 tags: frontmatter.topics,
                 private: existing_fm.private,
                 updated_at: existing_fm.updated_at.clone(),
-                id: existing_fm.id.clone(),
+                id: if existing_fm.id.is_some() && !existing_fm.id.as_ref().unwrap().is_empty() {
+                        existing_fm.id.clone()
+                    } else if frontmatter.qiita_id.is_some() && !frontmatter.qiita_id.as_ref().unwrap().is_empty() {
+                        frontmatter.qiita_id
+                    } else {
+                        Some("".to_string())
+                    },
                 organization_url_name: existing_fm.organization_url_name.clone(),
                 slide: existing_fm.slide,
                 ignorePublish: !frontmatter.published,
@@ -69,7 +75,7 @@ impl QiitaCompiler {
                 tags: frontmatter.topics,
                 private: false,
                 updated_at: "".to_string(),
-                id: None,
+                id: if frontmatter.qiita_id.is_some() { frontmatter.qiita_id } else { Some("".to_string()) },
                 organization_url_name: None,
                 slide: false,
                 ignorePublish: !frontmatter.published,

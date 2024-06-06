@@ -144,6 +144,7 @@ fn new(target: &str, only: &Option<Platform>) {
         emoji: "😀".to_string(),
         r#type: "tech".to_string(),
         topics: vec![],
+        qiita_id: Some("".to_string()),
         published: false,
         only: only.clone(),
     };
